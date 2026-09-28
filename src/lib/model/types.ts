@@ -162,6 +162,11 @@ export interface Straighten {
   quad: Vec[] | null;
   /** Real width/height of the quad (null = estimated automatically). */
   aspect: number | null;
+  /** Known real width / height of the quad in feet (optional; also sets the scale). */
+  knownWidthFt?: number | null;
+  knownHeightFt?: number | null;
+  /** Row-major 3x3 homography from original-photo pixels to the current rectified photo. */
+  H?: number[] | null;
 }
 
 export type CalibrationMode = 'auto' | 'measure' | 'facade-width';

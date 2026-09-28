@@ -35,6 +35,8 @@ export interface SheetResult {
   scaleInfo: ScaleInfo;
   frame: WorldFrame;
   toPaper: (w: Vec) => Vec;
+  /** Paper mm -> world feet (inverse of toPaper). */
+  fromPaper: (p: Vec) => Vec;
   callouts: PlacedCallout[];
   levels: Level[];
   warnings: string[];
@@ -256,6 +258,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   const hx0 = (zoneX0 + zoneX1) / 2 - houseWmm / 2;
   const bx0 = bb ? bb.x0 : 0;
   const toPaper = (w: Vec): Vec => ({ x: hx0 + (w.x - bx0) * k, y: gradeY - w.y * k });
+  const fromPaper = (p: Vec): Vec => ({ x: (p.x - hx0) / k + bx0, y: (gradeY - p.y) / k });
   const houseLeft = hx0;
   const houseRight = hx0 + houseWmm;
   // Columns grow into any space the standard scale leaves over.
@@ -593,6 +596,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     scaleInfo,
     frame,
     toPaper,
+    fromPaper,
     callouts: placedCallouts,
     levels,
     warnings,
