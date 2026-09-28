@@ -12,7 +12,10 @@ import {
   WINDOW_STYLES,
 } from '../lib/model/defaults';
 import type { HouseElement } from '../lib/model/types';
+import { isRectElement } from '../lib/model/types';
+import { snapElementsToPhoto } from '../state/snap';
 import { useStore } from '../state/store';
+import { useUI } from '../state/ui';
 
 type Opt<T extends string> = { id: T; label: string };
 
@@ -49,7 +52,8 @@ function Check({ label, value, onChange }: { label: string; value: boolean; onCh
 }
 
 export function ElementProps({ el }: { el: HouseElement }) {
-  const { update } = useStore();
+  const { project, update } = useStore();
+  const { notify } = useUI();
   const set = (patch: Partial<HouseElement>) => update((p) => ({ ...p, elements: p.elements.map((e) => (e.id === el.id ? ({ ...e, ...patch } as HouseElement) : e)) }), { mergeKey: `props-${el.id}` });
 
   let fields: React.ReactNode = null;
@@ -150,6 +154,19 @@ export function ElementProps({ el }: { el: HouseElement }) {
         <input value={el.name ?? ''} placeholder={KIND_INFO[el.kind].label} onChange={(e) => set({ name: e.target.value })} />
       </label>
       {fields}
+      {isRectElement(el) && el.kind !== 'railing' && el.kind !== 'light' && project.photo && (
+        <button
+          className="btn small"
+          title="Fine-tune: move each side onto a strong edge within a few pixels. Undo (Ctrl+Z) if it picks the wrong edge."
+          onClick={async () => {
+            const { elements, moved } = await snapElementsToPhoto(project, [el.id]);
+            if (moved) update((p) => ({ ...p, elements: p.elements.map((e) => elements.find((x) => x.id === e.id) ?? e) }));
+            else notify('Already on the strongest nearby edges.', 'info');
+          }}
+        >
+          Snap sides to photo edges
+        </button>
+      )}
     </div>
   );
 }

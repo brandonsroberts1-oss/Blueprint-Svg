@@ -40,7 +40,10 @@ function AiSection() {
         property: { ...p.property, stories: p.property.stories ?? t.stories, hints: { ...p.property.hints, style: p.property.hints.style ?? t.style } },
       }));
       setSelectedId(null);
-      notify(`Traced ${t.elements.length} elements${t.skipped ? ` (${t.skipped} unusable ones skipped)` : ''}. ${t.notes} Check the shapes against the photo and adjust.`, 'success');
+      notify(
+        `Traced ${t.elements.length} elements${t.skipped ? ` (${t.skipped} unusable ones skipped)` : ''}. ${t.notes} Check the shapes against the photo and adjust.`,
+        'success',
+      );
     } catch (e) {
       notify(`AI tracing failed: ${(e as Error).message}`, 'error');
     } finally {
