@@ -160,13 +160,11 @@ export function PhotoPanel() {
             ))}
           </ul>
         )}
-        {(prop.line1 || prop.line2) && (
-          <div className="card">
-            <div className="label">Title block address</div>
-            <input value={prop.line1} placeholder="Street" onChange={(e) => update((p) => ({ ...p, property: { ...p.property, line1: e.target.value } }), { mergeKey: 'line1' })} />
-            <input value={prop.line2} placeholder="City, State ZIP" onChange={(e) => update((p) => ({ ...p, property: { ...p.property, line2: e.target.value } }), { mergeKey: 'line2' })} />
-          </div>
-        )}
+        <div className="card">
+          <div className="label">Title block address</div>
+          <input value={prop.line1} placeholder="Street (e.g. 1234 Maple Ridge Lane)" onChange={(e) => update((p) => ({ ...p, property: { ...p.property, line1: e.target.value } }), { mergeKey: 'line1' })} />
+          <input value={prop.line2} placeholder="City, State ZIP" onChange={(e) => update((p) => ({ ...p, property: { ...p.property, line2: e.target.value } }), { mergeKey: 'line2' })} />
+        </div>
         {prop.footprintFacadeFt && (
           <div className="card">
             <div className="label">Building footprint (OpenStreetMap)</div>

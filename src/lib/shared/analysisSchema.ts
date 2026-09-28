@@ -6,6 +6,13 @@ import * as z from 'zod';
  */
 export const KINDS = ['wall', 'roof', 'gable', 'chimney', 'window', 'door', 'garage', 'vent', 'column', 'railing', 'steps', 'trim', 'light'] as const;
 
+/**
+ * Enumerations are expressed as strings that list their allowed values. The SDK sends
+ * enums to the API as descriptions anyway, and a lenient parse means one unexpected
+ * value can't discard a whole tracing — fromAnalysis() validates every field.
+ */
+const oneOf = (values: readonly string[], note = '') => z.string().describe(`One of: ${values.join(', ')}.${note ? ` ${note}` : ''}`);
+
 const Point = z.object({ x: z.number(), y: z.number() });
 const Box = z.object({
   x0: z.number().describe('left edge (px)'),
@@ -15,28 +22,28 @@ const Box = z.object({
 });
 
 export const DetectedElementSchema = z.object({
-  kind: z.enum(KINDS),
+  kind: oneOf(KINDS),
   description: z.string().describe('Short description, e.g. "upper left bedroom window"'),
   box: Box.nullable().describe('Axis-aligned box for windows, doors, garage doors, vents, columns, railings, steps, trim boards and lights (include trim/casing). Null for polygon kinds.'),
   polygon: z.array(Point).nullable().describe('Outline vertices for walls, roofs, gables and chimneys. Null for box kinds.'),
-  material: z
-    .enum(['lap', 'dutch-lap', 'board-batten', 'vertical', 'shake', 'brick', 'stone', 'stucco', 'plain', 'shingle', 'metal', 'tile', 'slate', 'flat'])
-    .nullable()
-    .describe('Walls/gables/chimneys: cladding. Roofs: shingle, metal, tile, slate, shake or flat.'),
-  windowStyle: z.enum(['double-hung', 'casement', 'picture', 'slider', 'awning', 'arch-top', 'round', 'octagon', 'half-round']).nullable(),
-  grid: z.enum(['none', 'full', 'top', 'prairie']).nullable().describe('Window grilles: none, full (all sashes), top (upper sash only) or prairie (perimeter).'),
+  material: oneOf(
+    ['lap', 'dutch-lap', 'board-batten', 'vertical', 'shake', 'brick', 'stone', 'stucco', 'plain', 'shingle', 'metal', 'tile', 'slate', 'flat'],
+    'Walls/gables/chimneys: cladding. Roofs: shingle, metal, tile, slate, shake or flat.',
+  ).nullable(),
+  windowStyle: oneOf(['double-hung', 'casement', 'picture', 'slider', 'awning', 'arch-top', 'round', 'octagon', 'half-round']).nullable(),
+  grid: oneOf(['none', 'full', 'top', 'prairie'], 'Window grilles: full = all sashes, top = upper sash only, prairie = perimeter.').nullable(),
   gridCols: z.number().int().nullable().describe('Panes across per sash'),
   gridRows: z.number().int().nullable().describe('Panes down per sash'),
   units: z.number().int().nullable().describe('Number of windows mulled side by side inside this box'),
   shutters: z.boolean().nullable(),
-  doorStyle: z.enum(['six-panel', 'craftsman', 'half-lite', 'full-lite', 'flush', 'double', 'french']).nullable(),
-  sidelights: z.enum(['none', 'left', 'right', 'both']).nullable(),
+  doorStyle: oneOf(['six-panel', 'craftsman', 'half-lite', 'full-lite', 'flush', 'double', 'french']).nullable(),
+  sidelights: oneOf(['none', 'left', 'right', 'both']).nullable(),
   transom: z.boolean().nullable(),
-  garageStyle: z.enum(['raised-panel', 'long-panel', 'carriage', 'flush', 'ribbed', 'full-view']).nullable(),
+  garageStyle: oneOf(['raised-panel', 'long-panel', 'carriage', 'flush', 'ribbed', 'full-view']).nullable(),
   garageSections: z.number().int().nullable().describe('Horizontal sections (usually 4)'),
   garageWindows: z.boolean().nullable().describe('True if the top section has windows'),
-  ventShape: z.enum(['rect', 'round', 'octagon', 'half-round', 'triangle']).nullable(),
-  columnStyle: z.enum(['square', 'tapered', 'round']).nullable(),
+  ventShape: oneOf(['rect', 'round', 'octagon', 'half-round', 'triangle']).nullable(),
+  columnStyle: oneOf(['square', 'tapered', 'round']).nullable(),
 });
 
 export const AnalysisSchema = z.object({

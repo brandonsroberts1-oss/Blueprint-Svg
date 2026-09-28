@@ -37,14 +37,18 @@ const sample: Analysis = {
     { ...nulls, kind: 'garage', description: 'garage', box: { x0: 550, y0: 700, x1: 850, y1: 900 }, garageStyle: 'carriage', garageSections: 20 },
     { ...nulls, kind: 'column', description: 'post', polygon: [{ x: 10, y: 10 }, { x: 12, y: 10 }, { x: 11, y: 11 }] },
     { ...nulls, kind: 'door', description: 'no geometry' },
+    { ...nulls, kind: 'porch', description: 'unknown kind', box: { x0: 1, y0: 1, x1: 50, y1: 50 } },
+    { ...nulls, kind: 'window', description: 'odd values', box: { x0: 600, y0: 300, x1: 680, y1: 420 }, windowStyle: 'bay', grid: 'diamond' },
   ],
 };
 
 describe('elementsFromAnalysis', () => {
   it('scales, validates and orders detected elements', () => {
     const r = elementsFromAnalysis(sample, 2, 2, 2000, 2000);
-    expect(r.skipped).toBe(2); // tiny column + door without geometry
-    expect(r.elements.map((e) => e.kind)).toEqual(['wall', 'roof', 'window', 'garage']);
+    expect(r.skipped).toBe(3); // tiny column, door without geometry, unknown kind
+    expect(r.elements.map((e) => e.kind)).toEqual(['wall', 'roof', 'window', 'garage', 'window']);
+    const odd = r.elements[4];
+    expect(odd.kind === 'window' && [odd.style, odd.grid]).toEqual(['double-hung', 'none']);
     const wall = r.elements[0];
     expect(wall.kind === 'wall' && wall.points[1]).toEqual({ x: 1800, y: 1800 });
     const roof = r.elements[1];
@@ -65,7 +69,7 @@ describe('analyzePhoto', () => {
     const parse = vi.fn(async (_params: unknown) => ({ stop_reason: 'end_turn', parsed_output: sample, model: 'claude-opus-5' }));
     const client = { beta: { messages: { parse } } } as unknown as Anthropic;
     const res = await analyzePhoto({ image, width: 1000, height: 1000 }, client);
-    expect(res.analysis.elements).toHaveLength(6);
+    expect(res.analysis.elements).toHaveLength(8);
     const params = parse.mock.calls[0][0] as { model: string; fallbacks: string; betas: string[]; output_config: { format: unknown }; messages: { content: { type: string }[] }[] };
     expect(params.model).toBe('claude-opus-5');
     expect(params.fallbacks).toBe('default');
@@ -78,5 +82,18 @@ describe('analyzePhoto', () => {
     const client = { beta: { messages: { parse: async () => ({ stop_reason: 'refusal', parsed_output: null }) } } } as unknown as Anthropic;
     await expect(analyzePhoto({ image, width: 10, height: 10 }, client)).rejects.toMatchObject({ status: 422 });
     await expect(analyzePhoto({ image: 'nope', width: 10, height: 10 }, client)).rejects.toBeInstanceOf(AnalysisError);
+  });
+});
+
+describe('structured output schema', () => {
+  it('accepts unexpected enum-like values instead of failing the whole tracing', async () => {
+    const { betaZodOutputFormat } = await import('@anthropic-ai/sdk/helpers/beta/zod');
+    const { AnalysisSchema } = await import('../src/lib/shared/analysisSchema');
+    const format = betaZodOutputFormat(AnalysisSchema);
+    const text = JSON.stringify({ ...sample, elements: [{ ...sample.elements[1], material: 'vinyl' }] });
+    const parsed = format.parse(text) as Analysis;
+    expect(parsed.elements[0].material).toBe('vinyl');
+    // The JSON schema sent to the API still lists the allowed values.
+    expect(JSON.stringify(format.schema)).toContain('One of: lap, dutch-lap');
   });
 });

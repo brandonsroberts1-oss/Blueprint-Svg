@@ -1,5 +1,5 @@
 import type { Vec } from '../geometry/vec';
-import type { Analysis, DetectedElement } from '../shared/analysisSchema';
+import { type Analysis, type DetectedElement, KINDS } from '../shared/analysisSchema';
 import { createElement, sortIntoBands } from './defaults';
 import type {
   ChimneyMaterial,
@@ -69,6 +69,7 @@ export function elementsFromAnalysis(a: Analysis, sx: number, sy: number, w: num
 }
 
 function convert(d: DetectedElement, P: (p: Vec) => Vec): HouseElement | null {
+  if (!(KINDS as readonly string[]).includes(d.kind)) return null;
   const polyKinds = ['wall', 'roof', 'gable', 'chimney'];
   let pts: Vec[] | null = d.polygon && d.polygon.length >= 3 ? d.polygon.map(P) : null;
   let box: { x: number; y: number; w: number; h: number } | null = null;
@@ -164,5 +165,7 @@ function convert(d: DetectedElement, P: (p: Vec) => Vec): HouseElement | null {
     case 'trim':
     case 'light':
       return { ...createElement(d.kind, box!), name };
+    default:
+      return null;
   }
 }
