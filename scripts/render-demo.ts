@@ -7,6 +7,7 @@ import { buildSheet } from '../src/lib/render/sheet';
 import { strokesToSvg } from '../src/lib/render/svg';
 
 const outDir = process.argv[2] ?? 'demo-out';
+// Tip: open the SVGs in a browser, or import demo-laser.svg into xTool Creative Space.
 mkdirSync(outDir, { recursive: true });
 const project = demoProject();
 const t0 = performance.now();

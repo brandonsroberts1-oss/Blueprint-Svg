@@ -418,9 +418,12 @@ input[type='range'] {
 }
 .sources li {
   display: flex;
-  gap: 6px;
-  align-items: baseline;
-  padding: 2px 0;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 3px 0;
+}
+.sources li .dot {
+  margin-top: 5px;
 }
 .sources .dot {
   width: 8px;

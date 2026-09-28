@@ -332,18 +332,29 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   if (bb && shownLevels.length) {
     const lineEnd = dimStripW ? dimX : colWEff ? rightColEnd : houseRight + gap * 2;
     const heights = [0, ...shownLevels.map((l) => l.heightFt)];
+    const labelBands: [number, number][] = [];
+    const free = (a: number, b: number) => labelBands.every(([c, d]) => b < c - 0.4 || a > d + 0.4);
     for (const l of shownLevels) {
       const y = gradeY - l.heightFt * k;
       if (y < content.y0) continue;
       pen.line('annotation', [{ x: houseRight + 1.2, y }, { x: lineEnd + (dimStripW ? 1.2 : 0), y }]);
       const lx = colWEff ? colLeftX : houseRight + 2;
-      pen.text(levelStyle, l.name.toUpperCase(), lx, y - 0.9, { align: 'left' });
-      rightObstacles.push([y - 0.9 - levelStyle.size - 0.5, y + 0.6]);
+      // Label above its line; below it if that would collide with a neighbouring level; else omit.
+      const above: [number, number] = [y - 0.9 - levelStyle.size, y - 0.9];
+      const below: [number, number] = [y + 0.9, y + 0.9 + levelStyle.size];
+      const band = free(...above) ? above : free(...below) ? below : null;
+      if (band) {
+        pen.text(levelStyle, l.name.toUpperCase(), lx, band[1], { align: 'left' });
+        labelBands.push(band);
+        rightObstacles.push([band[0] - 0.5, band[1] + 0.6]);
+      }
+      rightObstacles.push([y - 0.3, y + 0.3]);
     }
     if (dimStripW) {
       const ys = heights.map((h) => gradeY - h * k);
       pen.line('annotation', [{ x: dimX, y: Math.min(...ys) - 1.2 }, { x: dimX, y: gradeY + 1.2 }]);
       pen.line('annotation', [{ x: houseRight + ext + 0.5, y: gradeY }, { x: dimX + 1.2, y: gradeY }]);
+      rightObstacles.push([gradeY - 0.3, gradeY + 0.3]);
       for (const y of ys) pen.tick('annotation', { x: dimX, y }, S * 0.9);
       for (let i = 1; i < heights.length; i++) {
         const y0 = ys[i - 1];

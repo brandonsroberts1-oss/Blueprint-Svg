@@ -127,7 +127,11 @@ export function DetailsPanel() {
             const o = project.calloutOverrides[c.key] ?? {};
             const custom = c.custom;
             return (
-              <li key={c.key} className={`${c.enabled ? '' : 'off'} ${c.enabled && !c.placed && ann.showCallouts ? 'unplaced' : ''}`}>
+              <li
+                key={c.key}
+                className={`${c.enabled ? '' : 'off'} ${c.enabled && !c.placed && ann.showCallouts ? 'unplaced' : ''}`}
+                title={c.enabled && !c.placed && ann.showCallouts ? 'No room on this board — hide other callouts, shorten the text or use a bigger board' : undefined}
+              >
                 <input
                   type="checkbox"
                   checked={c.enabled}
@@ -135,7 +139,7 @@ export function DetailsPanel() {
                   title={c.enabled ? 'Hide' : 'Show'}
                 />
                 {c.tag ? (
-                  <span className="grow muted">Detail tag</span>
+                  <span className="grow muted">Detail tag {Number(c.key.split(':')[1] ?? 0) + 1} (decorative)</span>
                 ) : (
                   <input className="grow" value={o.text ?? c.text} onChange={(e) => override(c.key, { text: e.target.value }, `co-${c.key}`)} />
                 )}

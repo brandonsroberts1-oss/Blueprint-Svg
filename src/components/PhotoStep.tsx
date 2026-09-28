@@ -152,8 +152,10 @@ export function PhotoPanel() {
             {result.sources.map((s) => (
               <li key={s.name} className={s.status}>
                 <span className="dot" />
-                {s.name}
-                {s.message ? <span className="muted"> — {s.message}</span> : null}
+                <div>
+                  <div>{s.name}</div>
+                  {s.message ? <div className="muted">{s.message}</div> : null}
+                </div>
               </li>
             ))}
           </ul>
@@ -178,6 +180,13 @@ export function PhotoPanel() {
               )}
             </p>
             <p className="muted small">You can use this as the scale reference once the walls are traced (step 3 → Scale).</p>
+            <p className="muted small">
+              Footprint data ©{' '}
+              <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">
+                OpenStreetMap contributors
+              </a>
+              .
+            </p>
           </div>
         )}
       </section>

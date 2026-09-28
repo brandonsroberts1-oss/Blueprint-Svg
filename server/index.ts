@@ -11,7 +11,7 @@ try {
 }
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
-const production = process.env.NODE_ENV === 'production';
+const production = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
 const port = Number(process.env.PORT ?? 5173);
 
 const app = express();
