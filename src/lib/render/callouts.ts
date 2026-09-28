@@ -114,6 +114,8 @@ export interface CalloutContext {
   els: WorldEl[];
   houseX0: number;
   houseX1: number;
+  /** Write sizes in metres/millimetres instead of feet-inches. */
+  metric?: boolean;
 }
 
 export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
@@ -125,6 +127,8 @@ export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
   const frontOf = (i: number) => regions.slice(i + 1);
   const idx = (e: WorldEl) => els.indexOf(e);
   const sideX = (x: number) => (x < midX ? ctx.houseX0 : ctx.houseX1);
+  const size2 = (wFt: number, hFt: number) =>
+    ctx.metric ? `${(wFt * 0.3048).toFixed(2)} x ${(hFt * 0.3048).toFixed(2)} M` : `${formatFtIn(nominal(wFt))} x ${formatFtIn(nominal(hFt))}`;
   const push = (s: Omit<CalloutSpec, 'enabled' | 'side'> & { side?: CalloutSpec['side'] }) => {
     specs.push({ side: 'auto', enabled: true, ...s });
     used.push(s.anchor);
@@ -227,7 +231,7 @@ export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
       const r = w.rect!;
       const grid = group.some((g) => g.el.grid !== 'none') ? ' W/ GRILLES' : '';
       const t = w.el.trim ? Math.min(3.5 * IN, 0.13 * Math.min(r.x1 - r.x0, r.y1 - r.y0)) : 0;
-      const size = st === 'round' || st === 'octagon' || st === 'half-round' ? '' : `${formatFtIn(nominal(r.x1 - r.x0 - 2 * t))} x ${formatFtIn(nominal(r.y1 - r.y0 - 2 * t))} `;
+      const size = st === 'round' || st === 'octagon' || st === 'half-round' ? '' : `${size2(r.x1 - r.x0 - 2 * t, r.y1 - r.y0 - 2 * t)} `;
       const text = `${group.length > 1 ? '' : size}${WINDOW_TEXT[st]}${grid}${group.length > 1 ? ' (TYP.)' : ''}`;
       const glassPt = (rr: typeof r) => ({ x: (rr.x0 + rr.x1) / 2 + (rr.x1 - rr.x0) * 0.15, y: rr.y0 + (rr.y1 - rr.y0) * 0.72 });
       push({ key: `window:${st}`, text, anchor: glassPt(r), candidates: group.map((g) => glassPt(g.rect!)), priority: 6 });
@@ -258,7 +262,7 @@ export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
     const sl = el.sidelights === 'both' ? 2 : el.sidelights === 'none' ? 0 : 1;
     if (sl) w -= sl * (Math.min(Math.max(w * 0.2, 0.8), 1.35) + 2 * IN);
     const extras = [sl ? 'SIDELIGHTS' : '', el.transom ? 'TRANSOM' : ''].filter(Boolean).join(' & ');
-    const text = `${formatFtIn(nominal(w))} x ${formatFtIn(nominal(h))} ${DOOR_TEXT[el.style]}${extras ? ` W/ ${extras}` : ''}`;
+    const text = `${size2(w, h)} ${DOOR_TEXT[el.style]}${extras ? ` W/ ${extras}` : ''}`;
     push({ key: `door:${el.id}`, text, anchor: { x: (r.x0 + r.x1) / 2, y: r.y0 + (r.y1 - r.y0) * 0.62 }, priority: 8 - i });
   });
 
@@ -268,7 +272,7 @@ export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
   for (const g of garages) {
     const r = g.rect!;
     const t = g.el.trim ? Math.min(5.5 * IN, (r.x1 - r.x0) * 0.05, (r.y1 - r.y0) * 0.08) : 0;
-    const size = `${formatFtIn(nominal(r.x1 - r.x0 - 2 * t))} x ${formatFtIn(nominal(r.y1 - r.y0 - t))}`;
+    const size = size2(r.x1 - r.x0 - 2 * t, r.y1 - r.y0 - t);
     if (seenSizes.has(size)) continue;
     seenSizes.add(size);
     const same = garages.filter((o) => {
@@ -293,7 +297,7 @@ export function generateCallouts(ctx: CalloutContext): CalloutSpec[] {
     const c = columns[columns.length - 1];
     const r = c.rect!;
     const style = (c.el as { style: string }).style;
-    const size = `${Math.max(4, Math.round((r.x1 - r.x0) * 12))}"`;
+    const size = ctx.metric ? `${Math.max(100, Math.round(((r.x1 - r.x0) * 304.8) / 10) * 10)} MM` : `${Math.max(4, Math.round((r.x1 - r.x0) * 12))}"`;
     const text = style === 'tapered' ? 'TAPERED COLUMN ON PEDESTAL' : style === 'round' ? `${size} ROUND COLUMN` : `${size} SQUARE COLUMN`;
     const pt = (rr: typeof r) => ({ x: (rr.x0 + rr.x1) / 2, y: rr.y0 + (rr.y1 - rr.y0) * 0.55 });
     push({ key: 'column', text: `${text}${columns.length > 1 ? ' (TYP.)' : ''}`, anchor: pt(r), candidates: columns.map((cc) => pt(cc.rect!)), priority: 6 });

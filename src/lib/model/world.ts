@@ -36,8 +36,9 @@ export const worldToPx = (f: WorldFrame, w: Vec): Vec => ({ x: w.x * f.pxPerFtX,
 export function wallExtentPx(elements: readonly HouseElement[]): { x0: number; x1: number } | null {
   let x0 = Infinity;
   let x1 = -Infinity;
+  const hasWalls = elements.some((e) => e.kind === 'wall' && !e.hidden);
   for (const e of elements) {
-    if (e.hidden || (e.kind !== 'wall' && e.kind !== 'gable')) continue;
+    if (e.hidden || (e.kind !== 'wall' && (hasWalls || e.kind !== 'gable'))) continue;
     for (const p of e.points) {
       x0 = Math.min(x0, p.x);
       x1 = Math.max(x1, p.x);

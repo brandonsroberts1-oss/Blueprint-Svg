@@ -223,46 +223,79 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   const shownLevels = ann.showLevels ? levels.filter((l) => l.show && l.heightFt > 0.05).sort((a, b) => a.heightFt - b.heightFt) : [];
   const houseX0 = bb ? bb.x0 : 0;
   const houseX1 = bb ? bb.x1 : 1;
-  const specs = bb ? generateCallouts({ project, frame, els, houseX0, houseX1 }) : [];
+  const fixedScale = layout.scaleId !== 'auto' && layout.scaleId !== 'fit' ? scaleById(layout.scaleId) : null;
+  const metric = layout.scaleSystem === 'metric' ? !fixedScale || fixedScale.system === 'metric' : fixedScale?.system === 'metric';
+  const fmtLen = (ft: number) => (metric ? `${(ft * 0.3048).toFixed(2)} M` : formatFtIn(ft, ann.dimPrecision));
+  const specs = bb ? generateCallouts({ project, frame, els, houseX0, houseX1, metric }) : [];
   const activeSpecs = ann.showCallouts ? specs.filter((s) => s.enabled && (s.text || s.tag)) : [];
 
   const gap = 2.2 * S;
-  const colW = activeSpecs.length ? Math.min(20 * S, Math.max(12 * S, contentW * 0.15)) : 0;
   const dimStripW = shownLevels.length && ann.showDimensions ? 3.2 * S : 0;
   const topPad = ann.showPitch ? 3.6 * S : 1.6 * S;
   const belowGrade = ann.showDimensions ? 4.6 * S : 1.6 * S;
-
-  const zoneX0 = content.x0 + (colW ? colW + gap : gap * 0.5);
-  const zoneX1 = content.x1 - (colW ? colW + gap : gap * 0.5) - (dimStripW ? dimStripW + gap * 0.5 : 0);
+  const houseW = bb ? Math.max(1, bb.x1 - bb.x0) : 40;
+  const houseTop = bb ? Math.max(bb.y1, 1) : 25;
   const zoneY0 = content.y0 + topPad;
   const zoneY1 = content.y1 - tbHeight - belowGrade;
 
-  const houseW = bb ? Math.max(1, bb.x1 - bb.x0) : 40;
-  const houseTop = bb ? Math.max(bb.y1, 1) : 25;
-  const kMax = Math.max(0.01, Math.min((zoneX1 - zoneX0) / houseW, (zoneY1 - zoneY0) / houseTop));
-  let scale: DrawingScale;
-  if (layout.scaleId === 'auto') {
-    scale = pickStandardScale(kMax, layout.scaleSystem) ?? customScale(kMax);
-  } else if (layout.scaleId === 'fit') {
-    scale = customScale(kMax);
-  } else {
-    scale = scaleById(layout.scaleId) ?? pickStandardScale(kMax, layout.scaleSystem) ?? customScale(kMax);
-    if (mmPerFoot(scale) > kMax * 1.001) warnings.push(`At ${scale.label} the house is larger than the space on this sheet — pick a smaller scale or a larger board.`);
+  // Small boards get fewer callouts so the drawing is not buried in text.
+  const budget = Math.max(4, Math.min(ann.maxCallouts, Math.round(Math.sqrt(W * H) / 14)));
+  const chosenSpecs = [...activeSpecs].sort((a, b) => b.priority - a.priority).slice(0, budget);
+  const lhC = lineHeight(calloutStyle);
+  const vgap = 0.9 * S;
+  const tagR = 1.9 * S;
+  const columnNeed = (cw: number) => {
+    let total = 0;
+    for (const sp of chosenSpecs) total += (sp.tag ? tagR * 2 : (wrapText(calloutStyle, sp.text.toUpperCase(), cw).length - 1) * lhC + S) + vgap;
+    return total / 2 + shownLevels.length * (levelStyle.size + 2.2) * 0.5;
+  };
+  const scaleFor = (kMax: number): DrawingScale => {
+    if (layout.scaleId === 'auto') return pickStandardScale(kMax, layout.scaleSystem) ?? customScale(kMax);
+    if (layout.scaleId === 'fit') return customScale(kMax);
+    return scaleById(layout.scaleId) ?? pickStandardScale(kMax, layout.scaleSystem) ?? customScale(kMax);
+  };
+  const zoneFor = (cw: number) => {
+    const x0 = content.x0 + (cw ? cw + gap : gap * 0.5);
+    const x1 = content.x1 - (cw ? cw + gap : gap * 0.5) - (dimStripW ? dimStripW + gap * 0.5 : 0);
+    return { x0, x1, kMax: Math.max(0.01, Math.min((x1 - x0) / houseW, (zoneY1 - zoneY0) / houseTop)) };
+  };
+  // Pick the callout column width that allows the largest drawing while the labels still fit.
+  let colW = 0;
+  if (chosenSpecs.length) {
+    const colAvail = content.y1 - tbHeight - content.y0;
+    const widths = [20, 16.5, 13.5, 11].map((f) => f * S).filter((w) => w <= Math.max(12 * S, contentW * 0.2));
+    if (!widths.length) widths.push(11 * S);
+    let best: { cw: number; k: number } | null = null;
+    for (const cw of widths) {
+      if (columnNeed(cw) > colAvail * 0.92 && cw !== widths[0]) continue;
+      const k = mmPerFoot(scaleFor(zoneFor(cw).kMax));
+      if (!best || k > best.k * 1.0001) best = { cw, k };
+    }
+    colW = best?.cw ?? widths[0];
+  }
+  const { x0: zoneX0, x1: zoneX1, kMax } = zoneFor(colW);
+  const scale = scaleFor(kMax);
+  if (layout.scaleId !== 'auto' && layout.scaleId !== 'fit' && mmPerFoot(scale) > kMax * 1.001) {
+    warnings.push(`At ${scale.label} the house is larger than the space on this sheet — pick a smaller scale or a larger board.`);
   }
   const k = mmPerFoot(scale);
   const houseWmm = houseW * k;
   const houseHmm = houseTop * k;
-  const total = topPad + houseHmm + belowGrade + tbHeight;
-  const startY = content.y0 + Math.max(0, (content.y1 - content.y0 - total) / 2);
-  const gradeY = startY + topPad + houseHmm;
+  // Columns grow into any space the standard scale leaves over.
+  const colWEff = colW ? Math.min(26 * S, colW + Math.max(0, (zoneX1 - zoneX0 - houseWmm) / 2)) : 0;
+  // Centre the whole composition — house, label columns and title block — vertically.
+  const contentH = content.y1 - content.y0;
+  const need = colWEff ? columnNeed(colWEff) - belowGrade * 0.8 : 0;
+  const above = Math.max(topPad + houseHmm, Math.min(need, contentH - belowGrade - tbHeight));
+  const total = above + belowGrade + tbHeight;
+  const startY = content.y0 + Math.max(0, (contentH - total) / 2);
+  const gradeY = startY + above;
   const hx0 = (zoneX0 + zoneX1) / 2 - houseWmm / 2;
   const bx0 = bb ? bb.x0 : 0;
   const toPaper = (w: Vec): Vec => ({ x: hx0 + (w.x - bx0) * k, y: gradeY - w.y * k });
   const fromPaper = (p: Vec): Vec => ({ x: (p.x - hx0) / k + bx0, y: (gradeY - p.y) / k });
   const houseLeft = hx0;
   const houseRight = hx0 + houseWmm;
-  // Columns grow into any space the standard scale leaves over.
-  const colWEff = colW ? Math.min(26 * S, colW + Math.max(0, (zoneX1 - zoneX0 - houseWmm) / 2)) : 0;
   const knockouts: Vec[][] = [];
 
   // ----- Ground line & overall width -----
@@ -272,7 +305,9 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   }
   let wallX0 = houseX0;
   let wallX1 = houseX1;
-  const wallEls = els.filter((e) => e.el.kind === 'wall' || e.el.kind === 'gable');
+  // Overall width is wall to wall (gables and roofs include overhangs).
+  const walls = els.filter((e) => e.el.kind === 'wall');
+  const wallEls = walls.length ? walls : els.filter((e) => e.el.kind === 'gable');
   if (wallEls.length) {
     wallX0 = Math.min(...wallEls.map((e) => Math.min(...e.poly.map((p) => p.x))));
     wallX1 = Math.max(...wallEls.map((e) => Math.max(...e.poly.map((p) => p.x))));
@@ -286,7 +321,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     pen.line('annotation', [{ x: px0 - 1.2, y: dimY }, { x: px1 + 1.2, y: dimY }]);
     pen.tick('annotation', { x: px0, y: dimY }, S * 0.9);
     pen.tick('annotation', { x: px1, y: dimY }, S * 0.9);
-    pen.text(dimStyle, formatFtIn(houseWidthFt, ann.dimPrecision), (px0 + px1) / 2, dimY - 0.7, { align: 'center' });
+    pen.text(dimStyle, fmtLen(houseWidthFt), (px0 + px1) / 2, dimY - 0.7, { align: 'center' });
   }
 
   // ----- Levels -----
@@ -313,7 +348,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
       for (let i = 1; i < heights.length; i++) {
         const y0 = ys[i - 1];
         const y1 = ys[i];
-        const txt = formatFtIn(heights[i] - heights[i - 1], ann.dimPrecision);
+        const txt = fmtLen(heights[i] - heights[i - 1]);
         const tw = measureText(dimStyle, txt);
         if (Math.abs(y0 - y1) > tw + 1.2) pen.text(dimStyle, txt, dimX - 0.7, (y0 + y1) / 2, { align: 'center', rotateDeg: 90 });
         else pen.text(dimStyle, txt, dimX + 1.2, (y0 + y1) / 2 + dimStyle.size / 2, { align: 'left' });
@@ -413,8 +448,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   if (bb && colWEff && activeSpecs.length) {
     const colTop = content.y0 + 0.3 * S;
     const colBottom = gradeY + belowGrade * 0.8;
-    const lh = lineHeight(calloutStyle);
-    const tagR = 1.9 * S;
+    const lh = lhC;
     const makeLabel = (spec: CalloutSpec, side: 'left' | 'right'): Label => {
       let world = spec.anchor;
       if (spec.candidates?.length) {
@@ -429,7 +463,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
       const w = Math.max(...lines.map((t) => measureText(calloutStyle, t)));
       return { spec, side, lines, h, w, anchor, desired: anchor.y - calloutStyle.size / 2, top: 0 };
     };
-    const chosen = [...activeSpecs].sort((a, b) => b.priority - a.priority).slice(0, Math.max(1, ann.maxCallouts));
+    const chosen = chosenSpecs;
     // Balance the two columns: split automatic callouts left/right by anchor x.
     const sideOf = new Map<CalloutSpec, 'left' | 'right'>();
     const fixedLeft = chosen.filter((s) => s.side === 'left');
@@ -444,7 +478,6 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     autos.forEach((s, i) => sideOf.set(s, i < leftTarget ? 'left' : 'right'));
 
     const cols: Record<'left' | 'right', Label[]> = { left: [], right: [] };
-    const vgap = 0.9 * S;
     const obstaclesFor = (side: 'left' | 'right') => (side === 'right' ? rightObstacles : []);
     for (const spec of chosen) {
       const preferred = sideOf.get(spec) ?? 'right';
@@ -561,6 +594,27 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     pen.text(st(S * 0.9), fl, cx, y, { align: 'center' });
   }
 
+  // ----- Centre everything drawn so far vertically on the sheet -----
+  let shiftY = 0;
+  if (bb) {
+    let minY = Infinity;
+    let maxY = -Infinity;
+    for (const st of pen.strokes) for (const q of st.pts) {
+      if (q.y < minY) minY = q.y;
+      if (q.y > maxY) maxY = q.y;
+    }
+    const free = content.y1 - content.y0 - (maxY - minY);
+    if (isFinite(minY) && free > 0) {
+      shiftY = content.y0 + free / 2 - minY;
+      if (Math.abs(shiftY) > 0.01) for (const st of pen.strokes) st.pts = st.pts.map((q) => ({ x: q.x, y: q.y + shiftY }));
+    }
+  }
+  const finalToPaper = (w: Vec): Vec => {
+    const q = toPaper(w);
+    return { x: q.x, y: q.y + shiftY };
+  };
+  const finalFromPaper = (p: Vec): Vec => fromPaper({ x: p.x, y: p.y - shiftY });
+
   // ----- Frame & cut line -----
   if (layout.frame !== 'none') {
     pen.rect('outline', m, m, W - m, H - m);
@@ -583,7 +637,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     if (inside) strokes.push(s);
     else for (const pts of clipPolyline(s.pts, [sheet], [])) strokes.push({ ...s, pts });
   }
-  if (bb && (houseLeft < 0 || houseRight > W || gradeY - houseHmm < 0)) warnings.push('Part of the drawing falls outside the sheet.');
+  if (bb && (houseLeft < 0 || houseRight > W || gradeY + shiftY - houseHmm < 0 || gradeY + shiftY > H)) warnings.push('Part of the drawing falls outside the sheet.');
   if (opts.optimize !== false) strokes = optimizeStrokes(strokes);
   if (scaleInfo.confidence === 'guess' && bb) warnings.push('Scale is a rough guess. Add a door or garage door, or measure a known length in the Scale panel.');
 
@@ -595,8 +649,8 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     mmPerFt: k,
     scaleInfo,
     frame,
-    toPaper,
-    fromPaper,
+    toPaper: finalToPaper,
+    fromPaper: finalFromPaper,
     callouts: placedCallouts,
     levels,
     warnings,

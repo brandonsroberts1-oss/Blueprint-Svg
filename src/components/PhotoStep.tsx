@@ -72,7 +72,16 @@ export function PhotoPanel() {
       const r = await lookupAddress(address.trim());
       setResult(r);
       update((p) => ({ ...p, property: applyLookup(p.property, r) }));
-      if (!r.address) notify('Address not found. Check the spelling, or enter the details by hand below.', 'error');
+      if (!r.address) {
+        const geocoders = r.sources.filter((s) => s.name.includes('geocoder') || s.name.includes('Nominatim'));
+        const unreachable = geocoders.length > 0 && geocoders.every((s) => s.status === 'error');
+        notify(
+          unreachable
+            ? 'Could not reach the address services from the server (details below). You can still type the address and facts by hand.'
+            : 'Address not found. Check the spelling, or enter the details by hand below.',
+          'error',
+        );
+      }
     } catch (e) {
       notify(`Lookup failed: ${(e as Error).message}`, 'error');
     } finally {
