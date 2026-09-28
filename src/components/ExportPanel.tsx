@@ -271,7 +271,10 @@ export function ExportPanel() {
       <section className="tips">
         <h3>Engraving on an xTool</h3>
         <ol>
-          <li>In xTool Creative Space, import the laser SVG. It keeps its real size ({Math.round(L.paperWidthMm)} × {Math.round(L.paperHeightMm)} mm).</li>
+          <li>
+            In xTool Creative Space, import the laser SVG. It is defined in millimetres, so it should come in at {Math.round(L.paperWidthMm)} ×{' '}
+            {Math.round(L.paperHeightMm)} mm — check the size readout before engraving.
+          </li>
           <li>Set the drawing to <b>Score</b> (line engraving). Lettering uses single-stroke fonts, so it scores cleanly as one line per stroke.</li>
           <li>With colour layers, give outlines more power than hatching for real line weights; or pick “Everything black” for one setting.</li>
           <li>The red cut line (if enabled) is for cutting the plaque out — set it to <b>Cut</b> or delete it.</li>

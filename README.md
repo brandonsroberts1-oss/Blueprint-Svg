@@ -89,7 +89,7 @@ phone shots up close exaggerate perspective.
 The laser SVG is designed to import cleanly into **xTool Creative Space** (and LightBurn):
 
 - Real-world size: `width`/`height` are in **millimetres** and 1 SVG unit = 1 mm, so the design
-  lands at exactly the board size you chose.
+  should import at exactly the board size you chose (check the size readout after importing).
 - **Only stroked paths** — no fills, bitmaps, `<text>`, transforms or CSS. All lettering is drawn
   with **single-line (engraving) fonts**, so each letter is one clean pass in *Score* mode.
 - Overlapping lines are merged, so nothing gets burned twice.

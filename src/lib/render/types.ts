@@ -16,7 +16,7 @@ export interface Stroke {
 export interface LayerInfo {
   id: Layer;
   name: string;
-  /** Laser colour (LightBurn-style palette so layers map automatically). */
+  /** Laser colour — distinct, standard colours so each class imports as its own layer. */
   color: string;
   /** Preview stroke width in mm. */
   width: number;
