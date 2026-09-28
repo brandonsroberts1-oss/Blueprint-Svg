@@ -179,3 +179,19 @@ describe('lookupProperty orchestration', () => {
     expect(rentcastCall).toBeDefined();
   });
 });
+
+describe('rate limiter', () => {
+  it('rejects requests over the limit with 429', async () => {
+    const { rateLimit } = await import('../server/rateLimit');
+    const mw = rateLimit({ windowMs: 60000, max: 2, name: 'test' });
+    const statuses: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      let status = 200;
+      const res = { setHeader: () => undefined, status: (s: number) => ((status = s), res), json: () => res } as never;
+      let passed = false;
+      mw({ ip: '1.2.3.4', socket: {} } as never, res, () => (passed = true));
+      statuses.push(passed ? 200 : status);
+    }
+    expect(statuses).toEqual([200, 200, 429]);
+  });
+});

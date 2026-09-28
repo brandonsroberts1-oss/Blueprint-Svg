@@ -51,6 +51,10 @@ npm start                 # serves dist/ and the API on $PORT (default 5173)
 
 or with Docker: `docker build -t blueprint-engraver . && docker run -p 8080:8080 --env-file .env blueprint-engraver`.
 
+> If you host it publicly, remember that **Auto-trace** spends your Anthropic credits. The server
+> rate-limits per IP, but put it behind a login (or leave `ANTHROPIC_API_KEY` unset) if strangers
+> can reach it.
+
 ### Configuration (`.env`, all optional)
 
 | Variable | Enables |
@@ -60,6 +64,7 @@ or with Docker: `docker build -t blueprint-engraver . && docker run -p 8080:8080
 | `ATTOM_API_KEY` | Assessor data via [ATTOM](https://api.developer.attomdata.com) (used if RentCast isn't set). |
 | `CONTACT_EMAIL` | Sent in the User-Agent to OpenStreetMap services, as their usage policy asks. |
 | `PORT` | Server port. |
+| `AI_TRACES_PER_HOUR`, `LOOKUPS_PER_HOUR` | Per-IP rate limits (defaults 20 and 60). |
 
 Without any keys the app still works end to end: you trace by hand, and the address lookup uses
 the free sources (US Census geocoder, OpenStreetMap Nominatim + Overpass, USGS elevation).
