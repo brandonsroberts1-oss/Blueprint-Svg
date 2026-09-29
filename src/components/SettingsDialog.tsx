@@ -67,7 +67,7 @@ export function SettingsDialog() {
         </section>
 
         <section>
-          <h3>AI auto-trace (Claude)</h3>
+          <h3>Tracing with Claude (optional)</h3>
           <label htmlFor="anthropic-key">
             Anthropic API key
             <SecretInput
@@ -82,7 +82,8 @@ export function SettingsDialog() {
             <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noreferrer">
               console.anthropic.com
             </a>
-            . Each auto-trace sends one photo to Claude and is billed to your account.
+            . Only needed if you'd rather have Claude trace than the free on-device auto-trace; each trace sends one photo to Claude and is billed to
+            your account.
           </p>
           <label>
             Model

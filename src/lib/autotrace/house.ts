@@ -1,10 +1,13 @@
 import type { Vec } from '../geometry/vec';
 import type { Analysis, DetectedElement } from '../shared/analysisSchema';
-import { type Gauss3, fitGauss, mahal2, nll, rgbaToLab } from './color';
+import { type GaussN, fitGaussN, mahalN, nllN, rgbaToLab, textureGrid } from './color';
 import { type Detection, boxH, boxW, coverage, nms } from './decode';
 import { type Mask, closeMask, columnProfile, componentMask, components, douglasPeucker, fillHoles, maskWhere, openMask } from './mask';
 import { GROUND_CLASSES, HOUSE_CLASSES, SKY_CLASSES, VEG_CLASSES } from './models';
 import { type Raster, resample } from './raster';
+
+/** Optional diagnostics sink (used by the evaluation harness). */
+export const autotraceDebug: { log?: (msg: string) => void } = {};
 
 /** Semantic class map aligned with the photo. */
 export interface SegGrid {
@@ -272,6 +275,20 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
   // ---------------------------------------------------------------- roof / wall colour models
   const small = resample(input.photo, w, h);
   const lab = rgbaToLab(small.data, N);
+  // Colour plus texture (edge energy across and along) per grid pixel: shingles and tile are busy both ways,
+  // lap siding mostly along, stucco hardly at all.
+  const tex = textureGrid(input.photo.data, input.photo.width, input.photo.height, w, h);
+  const D = 5;
+  const feat = new Float32Array(N * D);
+  for (let i = 0; i < N; i++) {
+    feat[i * D] = lab[i * 3];
+    feat[i * D + 1] = lab[i * 3 + 1];
+    feat[i * D + 2] = lab[i * 3 + 2];
+    feat[i * D + 3] = 2 * tex.tx[i];
+    feat[i * D + 4] = 2 * tex.ty[i];
+  }
+  const MINVAR = [9, 9, 9, 2, 2];
+  const fitModel = (idx: ArrayLike<number>) => fitGaussN(feat, D, idx, MINVAR);
   const inOpening = new Uint8Array(N);
   for (const d of openings) {
     const b = G(d);
@@ -338,8 +355,8 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
       for (let x = Math.floor(cx0); x < cx1; x++) if (y >= 0 && y < h && usable(y * w + x)) wallSeeds.push(y * w + x);
     notes.push('No windows or doors were recognised, so the wall colour is a guess.');
   }
-  let wallModel = fitGauss(lab, wallSeeds);
-  let roofModel: Gauss3 | null = null;
+  let wallModel = fitModel(wallSeeds);
+  let roofModel: GaussN | null = null;
   {
     const band = Math.max(2, Math.round(0.025 * Hh));
     const cand: number[] = [];
@@ -347,8 +364,8 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
       if (!topReliable[x]) continue;
       for (let y = Math.round(topFilled[x]) + 1; y <= topFilled[x] + band && y < groundG; y++) if (usable(y * w + x)) cand.push(y * w + x);
     }
-    const distinct = wallModel ? cand.filter((i) => mahal2(wallModel!, lab, i) > 6) : cand;
-    roofModel = fitGauss(lab, distinct.length >= Math.max(20, 0.25 * cand.length) ? distinct : cand);
+    const distinct = wallModel ? cand.filter((i) => mahalN(wallModel!, feat, i) > 9) : cand;
+    roofModel = fitModel(distinct.length >= Math.max(20, 0.25 * cand.length) ? distinct : cand);
   }
 
   // Alternate: trace the eave with the current models, then refit the models from the traced split.
@@ -361,7 +378,7 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
       for (let x = x0; x <= x1; x++)
         for (let y = Math.max(0, Math.round(topFilled[x])); y <= hi[x]; y++) {
           const i = y * w + x;
-          llr[i] = usable(i) ? Math.max(-2, Math.min(2, 0.5 * (nll(wallModel!, lab, i) - nll(roofModel!, lab, i)))) : 0;
+          llr[i] = usable(i) ? Math.max(-2, Math.min(2, 0.5 * (nllN(wallModel!, feat, i) - nllN(roofModel!, feat, i)))) : 0;
         }
     }
     eave = traceEave(contrast, useRegion ? llr : null, topFilled, w, x0, x1, lo, hi, { slope: 0.15, jump: 6, region: 1 / Math.max(2, 0.15 * Hh), thick: 0.8 / Hh });
@@ -374,8 +391,8 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
         for (let y = Math.round(topFilled[x]) + 2; y < Math.min(eave[x] - 1, topFilled[x] + 0.18 * Hh); y++) if (usable(y * w + x)) roofSeeds.push(y * w + x);
       for (let y = Math.round(eave[x]) + 2; y < Math.min(groundG - 1, eave[x] + 0.12 * Hh); y++) if (usable(y * w + x)) nextWall.push(y * w + x);
     }
-    const rm = roofSeeds.length >= 40 ? fitGauss(lab, roofSeeds) : null;
-    const wm = nextWall.length >= 40 ? fitGauss(lab, nextWall) : wallModel;
+    const rm = roofSeeds.length >= 40 ? fitModel(roofSeeds) : null;
+    const wm = nextWall.length >= 40 ? fitModel(nextWall) : wallModel;
     if (!rm || !wm) break;
     roofModel = rm;
     wallModel = wm;
@@ -389,44 +406,26 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
       let n = 0;
       const step = Math.max(1, Math.floor(idx.length / 3000));
       let m = 0;
-      for (let k = 0; k < idx.length; k += step, m++) if (nll(roofModel!, lab, idx[k]) < nll(wallModel!, lab, idx[k]) === roof) n++;
+      for (let k = 0; k < idx.length; k += step, m++) if (nllN(roofModel!, feat, idx[k]) < nllN(wallModel!, feat, idx[k]) === roof) n++;
       return n / Math.max(1, m);
     };
     accuracy = (hit(roofSeedsFinal, true) + hit(wallSeeds, false)) / 2;
   }
-  const colourOk = accuracy >= 0.8;
 
-  // ---------------------------------------------------------------- labels: roof above the eave, lower roofs by colour
+  // ---------------------------------------------------------------- labels (debug) and lower roofs by colour clusters
   const smooth = new Uint8Array(N);
-  const minRun = Math.max(2, Math.round(0.045 * Hh));
-  const lowRoof: { x: number; y0: number; y1: number }[] = [];
   for (let x = x0; x <= x1; x++) {
     if (isNaN(eave[x])) continue;
     for (let y = Math.max(0, Math.round(topFilled[x])); y < Math.min(h, groundG); y++) {
       const i = y * w + x;
-      if (!house.data[i] || veg.data[i]) continue;
-      if (y < eave[x]) smooth[i] = 1;
-      else if (colourOk && !inOpening[i]) smooth[i] = nll(roofModel!, lab, i) + 1 < nll(wallModel!, lab, i) ? 1 : 2;
-      else smooth[i] = 2;
+      if (house.data[i] && !veg.data[i]) smooth[i] = y < eave[x] ? 1 : 2;
     }
   }
-  if (colourOk) {
-    // Clean up speckle below the eave with a 5×5 majority vote, then collect long roof runs.
-    const lab2 = majority(smooth, w, h, 2);
-    for (let x = x0; x <= x1; x++) {
-      if (isNaN(eave[x]) || occluded[x]) continue;
-      let run0 = -1;
-      for (let y = Math.round(eave[x]) + 1; y <= Math.round(groundG - 0.08 * Hh); y++) {
-        const isRoof = y < groundG - 0.08 * Hh && lab2[y * w + x] === 1;
-        if (isRoof && run0 < 0) run0 = y;
-        if (!isRoof && run0 >= 0) {
-          if (y - run0 >= minRun && run0 > eave[x] + 0.06 * Hh) lowRoof.push({ x, y0: run0, y1: y });
-          run0 = -1;
-        }
-      }
-    }
-    for (let i = 0; i < N; i++) if (smooth[i]) smooth[i] = lab2[i] || smooth[i];
-  }
+  const lowRoofs =
+    roofModel && wallModel && accuracy >= 0.75
+      ? findLowerRoofs({ w, h, x0, x1, eave, groundG, Hh, isRoof: (i) => usable(i) && nllN(roofModel!, feat, i) + 1 < nllN(wallModel!, feat, i) })
+      : [];
+  for (const r of lowRoofs) for (const i of r.pixels) smooth[i] = 1;
   const dip = Math.max(2, Math.round(0.05 * (x1 - x0)));
   const spike = Math.max(1, Math.round(0.015 * (x1 - x0)));
   const eaveS = medianFilter(eave, 2);
@@ -435,27 +434,60 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
   profileMorph(eaveS, x0, x1, spike, 'close');
   const topS = medianFilter(top, 1);
   // Where trees hide the roofline, carry the neighbouring roofline across.
-  const topFixed = new Float64Array(w).fill(NaN);
-  for (let x = x0; x <= x1; x++) if (topReliable[x] || isNaN(topS[x]) === false) topFixed[x] = topReliable[x] ? topS[x] : NaN;
-  fillGaps(topFixed, x0, x1);
-  for (let x = x0; x <= x1; x++) if (!isNaN(topS[x]) && !topReliable[x] && topS[x] < topFixed[x]) topFixed[x] = topS[x];
+  const topFixed = Float64Array.from(topS);
+  {
+    // Bridge short hidden stretches between two reliable columns; elsewhere keep what is visible.
+    let last = -1;
+    for (let x = x0; x <= x1; x++) {
+      if (!topReliable[x] || isNaN(topS[x])) continue;
+      if (last >= 0 && x - last > 1 && x - last <= 0.25 * (x1 - x0))
+        for (let k = last + 1; k < x; k++) {
+          const v = topS[last] + ((topS[x] - topS[last]) * (k - last)) / (x - last);
+          topFixed[k] = isNaN(topS[k]) ? v : Math.min(topS[k], v);
+        }
+      last = x;
+    }
+    fillGaps(topFixed, x0, x1);
+  }
 
   // ---------------------------------------------------------------- wall tops, gables, roofs
   const epsE = Math.max(1.5, 0.02 * Hh);
   const E = profilePolyline(eaveS, x0, x1, epsE);
   const minPeak = 0.07 * Hh;
   const gables: { a: number; b: number; base: number }[] = [];
-  // A gable is a stretch where the wall top rises and falls again (the wall reaches up under the rakes).
-  for (let i = 0; i < E.length - 1; i++) {
-    if (E[i + 1].y >= E[i].y - minPeak * 0.5) continue; // not rising
-    let j = i + 1;
-    while (j < E.length - 1 && E[j + 1].y <= E[j].y + 0.5) j++; // climb / apex
-    let k = j;
-    while (k < E.length - 1 && E[k + 1].y > E[k].y + 0.5) k++; // descend
-    const base = Math.max(E[i].y, E[k].y);
-    const apex = Math.min(...E.slice(i, k + 1).map((p) => p.y));
-    if (k > j && base - apex >= minPeak && E[k].x - E[i].x >= 0.06 * (x1 - x0)) gables.push({ a: E[i].x, b: E[k].x, base });
-    i = k - 1;
+  {
+    // Classify simplified eave segments: level, sloped (rakes) or steep (steps between wings).
+    type Seg = { p: Vec; q: Vec; kind: 'flat' | 'up' | 'down' | 'steep' };
+    const segs: Seg[] = [];
+    for (let i = 0; i < E.length - 1; i++) {
+      const p = E[i];
+      const q = E[i + 1];
+      const dx = Math.max(1e-6, q.x - p.x);
+      const slope = (q.y - p.y) / dx;
+      const kind = Math.abs(slope) <= 0.12 ? 'flat' : Math.abs(slope) > 3.5 ? 'steep' : slope < 0 ? 'up' : 'down';
+      segs.push({ p, q, kind });
+    }
+    const span = x1 - x0;
+    for (let i = 0; i < segs.length; i++) {
+      if (segs[i].kind !== 'up') continue;
+      let j = i;
+      while (j + 1 < segs.length && segs[j + 1].kind === 'up') j++;
+      let k = j + 1;
+      // Allow a short level apex.
+      if (k < segs.length && segs[k].kind === 'flat' && segs[k].q.x - segs[k].p.x <= 0.15 * span) k++;
+      if (k >= segs.length || segs[k].kind !== 'down') continue;
+      let m = k;
+      while (m + 1 < segs.length && segs[m + 1].kind === 'down') m++;
+      const a = segs[i].p;
+      const b = segs[m].q;
+      const apex = Math.min(...segs.slice(i, m + 1).map((sg) => Math.min(sg.p.y, sg.q.y)));
+      const base = Math.max(a.y, b.y);
+      const left = segs[j].q.x - a.x;
+      const right = b.x - segs[k].p.x;
+      const width = b.x - a.x;
+      if (base - apex >= minPeak && width >= 0.06 * span && Math.min(left, right) >= 0.25 * Math.max(left, right)) gables.push({ a: a.x, b: b.x, base });
+      i = m;
+    }
   }
   const wallTop = new Float64Array(w).fill(NaN);
   for (let x = x0; x <= x1; x++) wallTop[x] = eaveS[x];
@@ -494,7 +526,7 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
 
   const P = (x: number, y: number): Vec => ({ x: x / f, y: y / f });
   const elements: DetectedElement[] = [];
-  const wallMaterial = guessWallMaterial(lab, small, wallSeeds, w);
+  const wallMaterial = guessWallMaterial(feat, D, wallSeeds);
   const roofMaterial = roofModel ? guessRoofMaterial(roofModel) : 'shingle';
 
   for (const wg of wings) {
@@ -543,22 +575,18 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
   }
 
   // Lower roofs in front of the walls (porches, garage roofs).
-  lowRoof.sort((p, q) => p.x - q.x);
-  const groups: { x: number; y0: number; y1: number }[][] = [];
-  for (const r of lowRoof) {
-    const g = groups.find((gr) => {
-      const l = gr[gr.length - 1];
-      return r.x - l.x <= 2 && Math.min(r.y1, l.y1) - Math.max(r.y0, l.y0) > 0;
-    });
-    if (g) g.push(r);
-    else groups.push([r]);
-  }
-  for (const g of groups) {
-    if (g.length < 0.06 * (x1 - x0)) continue;
-    const ys0 = median(g.map((r) => r.y0));
-    const ys1 = median(g.map((r) => r.y1));
+  for (const r of lowRoofs) {
+    const tops: number[] = [];
+    const bots: number[] = [];
+    for (let x = r.a; x <= r.b; x++) {
+      if (!isNaN(r.top[x])) tops.push(r.top[x]);
+      if (!isNaN(r.bottom[x])) bots.push(r.bottom[x]);
+    }
+    const yt = quantile(tops, 0.3);
+    const yb = quantile(bots, 0.7);
+    if (!(yb - yt >= 2)) continue;
     const e = blank('roof');
-    e.polygon = [P(g[0].x, ys1), P(g[g.length - 1].x + 1, ys1), P(g[g.length - 1].x + 1, ys0), P(g[0].x, ys0)];
+    e.polygon = [P(r.a, yb), P(r.b + 1, yb), P(r.b + 1, yt), P(r.a, yt)];
     e.material = roofMaterial;
     e.description = 'Lower roof (auto-traced)';
     elements.push(e);
@@ -626,7 +654,6 @@ export function parseHouse(input: HouseParseInput): { analysis: Analysis; debug:
   const wallFt = ref && mainWall ? (groundG - mainWall.y) / f / ref : null;
   const stories = wallFt ? Math.max(1, Math.min(3, Math.round(wallFt / 10))) : 1;
 
-  if (!colourOk) notes.push('The roof and walls are similar in colour, so lower roofs (porches) may be missing.');
   if (!openings.length) notes.push('No windows or doors were recognised — add them with the tools.');
   return {
     analysis: {
@@ -767,65 +794,72 @@ function traceEave(
   return out;
 }
 
-/** 5×5 (r = 2) majority vote between labels 1 and 2 (0 = ignore). */
-function majority(label: Uint8Array, w: number, h: number, r: number): Uint8Array {
-  const out = new Uint8Array(w * h);
-  for (let y = 0; y < h; y++)
-    for (let x = 0; x < w; x++) {
-      const i = y * w + x;
-      if (!label[i]) continue;
-      let a = 0;
-      let b = 0;
-      for (let dy = -r; dy <= r; dy++) {
-        const yy = y + dy;
-        if (yy < 0 || yy >= h) continue;
-        for (let dx = -r; dx <= r; dx++) {
-          const xx = x + dx;
-          if (xx < 0 || xx >= w) continue;
-          const l = label[yy * w + xx];
-          if (l === 1) a++;
-          else if (l === 2) b++;
-        }
+/**
+ * Porch and garage roofs below the main eave: wide, short horizontal bands of
+ * pixels that the roof model prefers over the wall model.
+ */
+function findLowerRoofs(c: {
+  w: number;
+  h: number;
+  x0: number;
+  x1: number;
+  eave: Float64Array;
+  groundG: number;
+  Hh: number;
+  isRoof: (i: number) => boolean;
+}): { a: number; b: number; top: Float64Array; bottom: Float64Array; pixels: number[] }[] {
+  const { w, h, x0, x1, eave, groundG, Hh } = c;
+  const m = new Uint8Array(w * h);
+  for (let x = x0; x <= x1; x++) {
+    if (isNaN(eave[x])) continue;
+    for (let y = Math.ceil(eave[x] + 0.04 * Hh); y < groundG - 0.06 * Hh; y++) if (c.isRoof(y * w + x)) m[y * w + x] = 1;
+  }
+  const cleaned = openMask(closeMask({ w, h, data: m }, 1), 1);
+  const { labels, comps } = components(cleaned);
+  const span = x1 - x0;
+  const out: { a: number; b: number; top: Float64Array; bottom: Float64Array; pixels: number[] }[] = [];
+  for (const comp of comps) {
+    const bw = comp.x1 - comp.x0 + 1;
+    const bh = comp.y1 - comp.y0 + 1;
+    if (comp.area > 0.002 * w * h) autotraceDebug.log?.(`  band? x${comp.x0}-${comp.x1} y${comp.y0}-${comp.y1} w${bw} h${bh} fill${(comp.area / (bw * bh)).toFixed(2)} (span ${span}, Hh ${Hh.toFixed(0)})`);
+    const minFill = bw > 0.3 * span ? 0.3 : 0.45;
+    if (bw < 0.1 * span || bh < 0.02 * Hh || bh > 0.3 * Hh || bw < 2.5 * bh || comp.area < minFill * bw * bh) continue;
+    if ((comp.y0 + comp.y1) / 2 > groundG - 0.12 * Hh) continue;
+    const t = new Float64Array(w).fill(NaN);
+    const bt = new Float64Array(w).fill(NaN);
+    const pixels: number[] = [];
+    for (let y = comp.y0; y <= comp.y1; y++)
+      for (let x = comp.x0; x <= comp.x1; x++) {
+        const i = y * w + x;
+        if (labels[i] !== comp.label) continue;
+        pixels.push(i);
+        if (isNaN(t[x])) t[x] = y;
+        bt[x] = y + 1;
       }
-      out[i] = a > b ? 1 : 2;
-    }
+    const ts = medianFilter(t, 3);
+    const bs = medianFilter(bt, 3);
+    fillGaps(ts, comp.x0, comp.x1);
+    fillGaps(bs, comp.x0, comp.x1);
+    out.push({ a: comp.x0, b: comp.x1, top: ts, bottom: bs, pixels });
+  }
   return out;
 }
 
-/** Wall cladding from colour and texture of the wall samples. */
-function guessWallMaterial(lab: Float32Array, img: Raster, seeds: number[], w: number): string {
+/** Wall cladding from colour and texture of the wall samples (features: L, a, b, texture across, texture along). */
+function guessWallMaterial(feat: Float32Array, D: number, seeds: number[]): string {
   if (seeds.length < 30) return 'lap';
-  let gx = 0;
-  let gy = 0;
-  let n = 0;
-  let a = 0;
-  let b = 0;
-  let L = 0;
-  for (const i of seeds) {
-    const x = i % w;
-    if (x < 1 || x >= w - 1 || i - w < 0 || i + w >= img.width * img.height) continue;
-    gx += Math.abs(lab[(i + 1) * 3] - lab[(i - 1) * 3]);
-    gy += Math.abs(lab[(i + w) * 3] - lab[(i - w) * 3]);
-    L += lab[i * 3];
-    a += lab[i * 3 + 1];
-    b += lab[i * 3 + 2];
-    n++;
-  }
-  if (!n) return 'lap';
-  gx /= n;
-  gy /= n;
-  L /= n;
-  a /= n;
-  b /= n;
-  const energy = gx + gy;
-  if (energy < 5) return 'stucco';
-  if (gy > 1.5 * gx && energy < 18) return 'lap';
-  if (energy > 16 && a > 8) return 'brick';
-  if (energy > 14) return 'stone';
-  return b > 12 && L > 55 ? 'stucco' : 'lap';
+  const med = (c: number) => median(seeds.map((i) => feat[i * D + c]));
+  const [L, a, b, tx, ty] = [med(0), med(1), med(2), med(3), med(4)];
+  autotraceDebug.log?.(`wall L${L.toFixed(0)} a${a.toFixed(0)} b${b.toFixed(0)} tx${tx.toFixed(1)} ty${ty.toFixed(1)}`);
+  const energy = tx + ty;
+  const along = ty / Math.max(0.3, tx);
+  // Brick: reddish and busy both ways (mortar joints). Stucco: smooth. Lap siding: lines along the wall.
+  if (a > 7 && b < 2 * a + 2 && energy > 7 && along < 1.8) return 'brick';
+  if (energy < 6.5 && along < 2.5) return 'stucco';
+  return 'lap';
 }
 
-function guessRoofMaterial(g: Gauss3): string {
+function guessRoofMaterial(g: GaussN): string {
   const [, a, b] = g.mean;
   return a > 10 && b > 12 ? 'tile' : 'shingle';
 }

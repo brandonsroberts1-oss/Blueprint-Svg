@@ -89,3 +89,127 @@ export function mahal2(g: Gauss3, lab: Float32Array, i: number): number {
 
 /** Negative log-likelihood (up to a constant). */
 export const nll = (g: Gauss3, lab: Float32Array, i: number) => 0.5 * (mahal2(g, lab, i) + g.logDet);
+
+/**
+ * Per-grid-pixel texture: mean |∂L/∂x| and |∂L/∂y| of the full-resolution photo
+ * over the photo pixels each grid cell covers (in L units, 0–100).
+ */
+export function textureGrid(data: Uint8ClampedArray, W: number, H: number, gw: number, gh: number): { tx: Float32Array; ty: Float32Array } {
+  const L = new Float32Array(W * H);
+  for (let i = 0; i < W * H; i++) L[i] = (0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2]) * (100 / 255);
+  const sx = new Float32Array(gw * gh);
+  const sy = new Float32Array(gw * gh);
+  const n = new Float32Array(gw * gh);
+  const fx = gw / W;
+  const fy = gh / H;
+  for (let y = 1; y < H - 1; y++) {
+    const gy = Math.min(gh - 1, Math.floor(y * fy));
+    for (let x = 1; x < W - 1; x++) {
+      const i = y * W + x;
+      const g = gy * gw + Math.min(gw - 1, Math.floor(x * fx));
+      sx[g] += Math.abs(L[i + 1] - L[i - 1]);
+      sy[g] += Math.abs(L[i + W] - L[i - W]);
+      n[g]++;
+    }
+  }
+  const tx = new Float32Array(gw * gh);
+  const ty = new Float32Array(gw * gh);
+  // Average, then a 3×3 box blur on the grid.
+  for (let g = 0; g < gw * gh; g++) {
+    sx[g] = n[g] ? sx[g] / n[g] : 0;
+    sy[g] = n[g] ? sy[g] / n[g] : 0;
+  }
+  for (let y = 0; y < gh; y++)
+    for (let x = 0; x < gw; x++) {
+      let a = 0;
+      let b = 0;
+      let c = 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx;
+          const yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= gw || yy >= gh) continue;
+          a += sx[yy * gw + xx];
+          b += sy[yy * gw + xx];
+          c++;
+        }
+      tx[y * gw + x] = a / c;
+      ty[y * gw + x] = b / c;
+    }
+  return { tx, ty };
+}
+
+/** Multivariate normal in D dimensions (features interleaved per pixel). */
+export interface GaussN {
+  d: number;
+  mean: number[];
+  /** Inverse covariance, row-major d×d. */
+  inv: number[];
+  logDet: number;
+}
+
+/** Fit a D-dimensional Gaussian to the feature vectors of pixels `idx`. */
+export function fitGaussN(feat: Float32Array, d: number, idx: ArrayLike<number>, minVar: number[]): GaussN | null {
+  const n = idx.length;
+  if (n < 8) return null;
+  const mean = new Array(d).fill(0);
+  for (let k = 0; k < n; k++) for (let c = 0; c < d; c++) mean[c] += feat[idx[k] * d + c];
+  for (let c = 0; c < d; c++) mean[c] /= n;
+  const S = new Array(d * d).fill(0);
+  const v = new Array(d).fill(0);
+  for (let k = 0; k < n; k++) {
+    for (let c = 0; c < d; c++) v[c] = feat[idx[k] * d + c] - mean[c];
+    for (let r = 0; r < d; r++) for (let c = r; c < d; c++) S[r * d + c] += v[r] * v[c];
+  }
+  for (let r = 0; r < d; r++)
+    for (let c = r; c < d; c++) {
+      S[r * d + c] /= n;
+      S[c * d + r] = S[r * d + c];
+    }
+  for (let c = 0; c < d; c++) S[c * d + c] += minVar[c] ?? 1;
+  // Gauss–Jordan inverse with log-determinant.
+  const A = S.slice();
+  const inv = new Array(d * d).fill(0);
+  for (let i = 0; i < d; i++) inv[i * d + i] = 1;
+  let logDet = 0;
+  for (let col = 0; col < d; col++) {
+    let piv = col;
+    for (let r = col + 1; r < d; r++) if (Math.abs(A[r * d + col]) > Math.abs(A[piv * d + col])) piv = r;
+    const pv = A[piv * d + col];
+    if (!(Math.abs(pv) > 1e-12)) return null;
+    if (piv !== col)
+      for (let c = 0; c < d; c++) {
+        [A[col * d + c], A[piv * d + c]] = [A[piv * d + c], A[col * d + c]];
+        [inv[col * d + c], inv[piv * d + c]] = [inv[piv * d + c], inv[col * d + c]];
+      }
+    logDet += Math.log(Math.abs(pv));
+    for (let c = 0; c < d; c++) {
+      A[col * d + c] /= pv;
+      inv[col * d + c] /= pv;
+    }
+    for (let r = 0; r < d; r++) {
+      if (r === col) continue;
+      const fct = A[r * d + col];
+      if (!fct) continue;
+      for (let c = 0; c < d; c++) {
+        A[r * d + c] -= fct * A[col * d + c];
+        inv[r * d + c] -= fct * inv[col * d + c];
+      }
+    }
+  }
+  return { d, mean, inv, logDet };
+}
+
+export function mahalN(g: GaussN, feat: Float32Array, i: number): number {
+  const d = g.d;
+  let s = 0;
+  for (let r = 0; r < d; r++) {
+    const vr = feat[i * d + r] - g.mean[r];
+    let row = 0;
+    for (let c = 0; c < d; c++) row += g.inv[r * d + c] * (feat[i * d + c] - g.mean[c]);
+    s += vr * row;
+  }
+  return s;
+}
+
+export const nllN = (g: GaussN, feat: Float32Array, i: number) => 0.5 * (mahalN(g, feat, i) + g.logDet);

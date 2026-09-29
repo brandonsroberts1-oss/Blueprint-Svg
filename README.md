@@ -16,11 +16,12 @@ callouts, level lines and a title block — and export an SVG that engraves clea
 2. **Straighten** — drag four corners onto a rectangle on the front wall. The app estimates the
    rectangle's true proportions from the perspective, warps the photo so the facade is
    face-on, and (if you enter a known width) sets the drawing scale at the same time.
-3. **Trace** — outline walls, roofs, gables and chimneys as polygons and drop boxes on windows,
+3. **Trace** — the house is **auto-traced for free, on your device**, right after straightening:
+   walls, roofs, gables, windows, doors, garage doors and lights. Fine-tune anything by dragging
+   corners, or outline walls, roofs, gables and chimneys yourself and drop boxes on windows,
    doors, garage doors, vents, columns, railings, steps, trim and lights. Each element has
    architectural options (siding type, grilles, door style, sidelights, garage panels, shutters…).
    The generated blueprint linework is overlaid on the photo so you can check alignment.
-   Optionally let **Claude** do a first pass with “Auto-trace with AI”.
 4. **Callouts & details** — callouts with leader arrows are generated from the tracing
    (“ARCHITECTURAL ASPHALT SHINGLES”, “16'-0" x 7'-0" OVERHEAD GARAGE DOOR”, “STONE VENEER
    WAINSCOT W/ CAP”…). Edit the wording, hide any, add your own notes, and adjust the level lines
@@ -63,7 +64,7 @@ npm run preview           # serve the built site
 
 | Setting | Enables |
 |---|---|
-| Anthropic API key | **Auto-trace with AI** (Claude vision, default model `claude-opus-5`). Create a key at [console.anthropic.com](https://console.anthropic.com/settings/keys); usage is billed to your account. |
+| Anthropic API key | Optional **tracing with Claude** instead of the free on-device auto-trace (default model `claude-opus-5`). Create a key at [console.anthropic.com](https://console.anthropic.com/settings/keys); usage is billed to your account. |
 | RentCast API key | Assessor data via [RentCast](https://www.rentcast.io/api) (free developer tier). |
 | ATTOM API key | Assessor data via [ATTOM](https://api.developer.attomdata.com) (used if RentCast isn't set). |
 | Contact email | Sent to OpenStreetMap Nominatim with address searches, as its usage policy asks. |
@@ -74,7 +75,7 @@ saved project files or into the published site. Every GitHub Pages site under th
 shares one browser storage origin, so only keep keys there if you trust your other Pages sites;
 **Forget all keys** removes them.
 
-Without any keys the app still works end to end: you trace by hand, and the address lookup uses
+Without any keys the app still works end to end: auto-trace runs on your device, and the address lookup uses
 the free sources (US Census geocoder, OpenStreetMap Nominatim + Overpass, USGS / Open-Meteo
 elevation). Some services don't accept requests from web pages (browser CORS rules) — each
 source reports its own status, and anything missing can be typed in by hand.
@@ -129,25 +130,45 @@ The lookup runs in your browser and calls each public service directly. It never
 owner names — only facts about the building. OpenStreetMap footprints are © OpenStreetMap contributors (ODbL); Census and USGS data
 are public domain; RentCast/ATTOM data is subject to their terms.
 
-## AI auto-trace
+## Auto-trace (free, on-device)
 
-With your Anthropic key in Settings, **Auto-trace with AI** sends the straightened photo
-(downscaled to 2000 px) straight from your browser to the Claude API with a structured-output
-schema and turns the response into editable elements. The Anthropic SDK is loaded only when you
-use it. Server-side refusal fallbacks are enabled (`fallbacks: "default"`), so if the model
-declines a request the API retries on Anthropic's recommended fallback model. Treat the result as
-a first draft — drag corners to match the photo exactly.
+Auto-trace needs no account or API key and the photo never leaves the browser. Three small
+open models run in a web worker with [ONNX Runtime Web](https://onnxruntime.ai/):
+
+| Model | Finds |
+|---|---|
+| YOLO26s semantic segmentation (ADE20K) | the house outline against sky, trees and ground |
+| YOLOv8s trained on Open Images | windows and doors |
+| YOLOE-26s with fixed text prompts | garage doors, exterior lights, chimneys |
+
+A parser then turns those into the drawing: it finds the grade line and roofline, traces the
+eave as the strongest continuous change from roof to wall (dynamic programming over colour and
+texture, kept above every window and door), and builds wall rectangles per wing, roof and gable
+polygons, porch roofs and the openings. The first run downloads about 34 MB of models (cached
+for next time); after that a trace takes a few seconds. Results are a first draft — check the
+shapes against the photo, especially where trees hide the house.
+
+The models live in `public/models/`; `scripts/export-models.py` rebuilds them from the
+Ultralytics releases.
+
+### Tracing with Claude (optional)
+
+With an Anthropic key in Settings, **Or trace with Claude** sends the straightened photo
+(downscaled to 2000 px) from your browser to the Claude API with a structured-output schema
+and turns the response into editable elements. The Anthropic SDK is loaded only when you use
+it, and server-side refusal fallbacks are enabled (`fallbacks: "default"`).
 
 ## Development
 
 ```bash
-npm test          # unit tests (geometry, fonts, renderer, address parsing, AI mapping)
+npm test          # unit tests (geometry, fonts, renderer, address parsing, AI mapping, auto-trace)
 npm run typecheck
 npx tsx scripts/render-demo.ts out/   # render the demo house to SVG from the command line
 ```
 
 ```
 src/lib/
+  autotrace/       on-device auto-trace: model runner (web worker), mask tools, house parser
   property/        Census + Nominatim geocoding, OSM footprint analysis, elevation, RentCast/ATTOM
   ai/              Claude vision tracing with structured outputs (lazy-loaded)
   settings.ts      per-browser API keys and preferences
@@ -166,3 +187,7 @@ src/components/    React UI for the five steps
   (public domain). See `src/lib/text/fonts/FONTS-LICENSE.md`.
 - Perspective aspect-ratio estimation after Zhang & He, *Whiteboard scanning and image
   enhancement* (2007).
+- Auto-trace models by [Ultralytics](https://github.com/ultralytics/ultralytics) (YOLO26,
+  YOLOv8 Open Images V7, YOLOE), licensed **AGPL-3.0** — fine for this open-source app; a
+  closed-source commercial product would need an Ultralytics enterprise licence. Trained on
+  ADE20K, Open Images and Objects365 data. Runtime: ONNX Runtime Web (MIT).
