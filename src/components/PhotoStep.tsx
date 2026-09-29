@@ -1,6 +1,5 @@
 import { useRef, useState } from 'react';
 import { lookupAddress } from '../api';
-import { importPhoto } from '../lib/image/imageUtils';
 import { demoWithSketch } from '../lib/model/demoPhoto';
 import { FACT_LABELS, applyLookup } from '../lib/model/facts';
 import { recordProviders } from '../lib/settings';
@@ -9,58 +8,14 @@ import type { PropertyLookup } from '../lib/shared/property';
 import { formatFtIn } from '../lib/units';
 import { useStore } from '../state/store';
 import { useUI } from '../state/ui';
+import { ChangePhotoButton, usePhotoActions } from './PhotoActions';
 
 const FACT_KEYS = Object.keys(FACT_LABELS) as FactKey[];
-
-function usePhotoUpload() {
-  const { project, update } = useStore();
-  const { setStep, notify, setSelectedId } = useUI();
-  const [busy, setBusy] = useState(false);
-  const upload = async (file: File) => {
-    if (!file.type.startsWith('image/')) {
-      notify('Please choose an image file (JPG, PNG or WebP).', 'error');
-      return;
-    }
-    if (project.elements.length && !confirm('Replace the photo? Your current tracing will be cleared.')) return;
-    setBusy(true);
-    try {
-      const photo = await importPhoto(file);
-      const { width: W, height: H } = photo;
-      update((p) => ({
-        ...p,
-        photo: null,
-        elements: [],
-        levels: [],
-        levelsCustomized: false,
-        calibration: { ...p.calibration, mode: p.calibration.mode === 'measure' ? 'auto' : p.calibration.mode, measure: null },
-        straighten: {
-          original: photo,
-          quad: [
-            { x: W * 0.22, y: H * 0.34 },
-            { x: W * 0.78, y: H * 0.34 },
-            { x: W * 0.78, y: H * 0.78 },
-            { x: W * 0.22, y: H * 0.78 },
-          ],
-          aspect: null,
-        },
-        groundY: H * 0.85,
-      }));
-      setSelectedId(null);
-      setStep('straighten');
-    } catch (e) {
-      notify(`Could not read that photo: ${(e as Error).message}. HEIC photos may need converting to JPG first.`, 'error');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return { upload, busy };
-}
 
 export function PhotoPanel() {
   const { project, update } = useStore();
   const { setStep, notify, settings, setSettingsOpen } = useUI();
-  const { upload, busy } = usePhotoUpload();
-  const fileRef = useRef<HTMLInputElement>(null);
+  const hasPhoto = !!(project.photo || project.straighten);
   const [address, setAddress] = useState(project.property.address);
   const [looking, setLooking] = useState(false);
   const [result, setResult] = useState<PropertyLookup | null>(null);
@@ -101,27 +56,18 @@ export function PhotoPanel() {
           Stand across the street and face the house as squarely as you can. Get the whole front and roof in the frame; mid-day overcast light
           with no cars in front works best.
         </p>
-        <div className="row">
-          <button className="btn primary" disabled={busy} onClick={() => fileRef.current?.click()}>
-            {busy ? 'Loading…' : project.straighten ? 'Replace photo…' : 'Choose photo…'}
-          </button>
-          {project.straighten && (
+        <div className="row wrap">
+          <ChangePhotoButton className="btn primary" label={hasPhoto ? 'Replace photo…' : 'Choose photo…'} />
+          {project.straighten ? (
             <button className="btn" onClick={() => setStep('straighten')}>
               Next: straighten →
             </button>
-          )}
+          ) : project.photo ? (
+            <button className="btn" onClick={() => setStep('trace')}>
+              Next: trace →
+            </button>
+          ) : null}
         </div>
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) upload(f);
-            e.target.value = '';
-          }}
-        />
       </section>
 
       <section>
@@ -214,7 +160,7 @@ export function PhotoPanel() {
 export function PhotoMain() {
   const { project, replace } = useStore();
   const { setStep, notify, setSelectedId } = useUI();
-  const { upload, busy } = usePhotoUpload();
+  const { upload, remove, busy } = usePhotoActions();
   const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const shown = project.straighten?.original ?? project.photo;
@@ -237,7 +183,13 @@ export function PhotoMain() {
       {shown ? (
         <div className="photo-view">
           <img src={shown.dataUrl} alt="House photo" />
-          <p className="muted">Drop another photo here to replace it.</p>
+          <div className="row wrap photo-actions">
+            <ChangePhotoButton className="btn primary" label="Choose a different photo…" />
+            <button className="btn ghost danger" onClick={remove}>
+              Remove photo
+            </button>
+          </div>
+          <p className="muted small">…or drop a new photo anywhere here.</p>
         </div>
       ) : (
         <div className="dropzone" onClick={() => fileRef.current?.click()}>

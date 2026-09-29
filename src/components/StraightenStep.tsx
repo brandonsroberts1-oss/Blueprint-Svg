@@ -7,6 +7,7 @@ import { isPolyElement } from '../lib/model/types';
 import { formatFtIn, parseLength } from '../lib/units';
 import { useStore } from '../state/store';
 import { useUI } from '../state/ui';
+import { ChangePhotoButton } from './PhotoActions';
 import { Viewport } from './Viewport';
 
 const CORNER_NAMES = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
@@ -190,6 +191,10 @@ export function StraightenPanel() {
         >
           Reset corners
         </button>
+      </section>
+      <section className="row wrap">
+        <span className="muted small">Not the right photo?</span>
+        <ChangePhotoButton className="btn small" label="Choose a different photo…" />
       </section>
     </div>
   );

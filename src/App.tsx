@@ -15,7 +15,7 @@ import { useUI } from './state/ui';
 
 export default function App() {
   const { step, setStep, notify } = useUI();
-  const { replace } = useStore();
+  const { project, replace } = useStore();
   const restored = useRef(false);
 
   useEffect(() => {
@@ -29,6 +29,17 @@ export default function App() {
       }
     });
   }, [replace, setStep, notify]);
+
+  // On phones the app is one scrolling page; start each step at the top.
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [step]);
+
+  // After undo or removing the photo, leave steps that no longer have anything to show.
+  useEffect(() => {
+    if (step === 'straighten' && !project.straighten) setStep(project.photo ? 'trace' : 'photo');
+    else if (step !== 'photo' && step !== 'straighten' && !project.photo) setStep(project.straighten ? 'straighten' : 'photo');
+  }, [step, project.photo, project.straighten, setStep]);
 
   return (
     <SheetProvider>

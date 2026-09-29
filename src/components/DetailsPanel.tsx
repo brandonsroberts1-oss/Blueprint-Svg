@@ -57,7 +57,6 @@ export function DetailsPanel() {
     ['showCallouts', 'Callouts'],
     ['showLevels', 'Level lines'],
     ['showDimensions', 'Dimensions'],
-    ['showPitch', 'Roof pitch symbols'],
     ['showScaleBar', 'Graphic scale bar'],
     ['showDetailTags', 'Detail tags'],
     ['showAddress', 'Address'],

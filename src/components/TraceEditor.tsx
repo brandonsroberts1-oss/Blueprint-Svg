@@ -8,6 +8,7 @@ import { houseLinesInImage } from '../lib/render/overlay';
 import { formatFtIn } from '../lib/units';
 import { useStore } from '../state/store';
 import { type Tool, useUI } from '../state/ui';
+import { ChangePhotoButton } from './PhotoActions';
 import { Viewport } from './Viewport';
 
 type Draft =
@@ -222,6 +223,7 @@ export function TraceEditor() {
           Photo
           <input type="range" min={0} max={1} step={0.05} value={photoOpacity} onChange={(e) => setPhotoOpacity(parseFloat(e.target.value))} />
         </label>
+        <ChangePhotoButton className="btn small" label="Change photo…" title="Use a different photo of the house (clears the tracing)" />
       </div>
       {drawingKind && (
         <div className="draw-hint">

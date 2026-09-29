@@ -3,12 +3,12 @@ import type { ElementKind } from '../lib/model/types';
 import { type Settings, loadSettings, saveSettings } from '../lib/settings';
 
 export type Step = 'photo' | 'straighten' | 'trace' | 'details' | 'export';
-export const STEPS: { id: Step; label: string }[] = [
-  { id: 'photo', label: 'Photo & address' },
-  { id: 'straighten', label: 'Straighten' },
-  { id: 'trace', label: 'Trace' },
-  { id: 'details', label: 'Callouts & details' },
-  { id: 'export', label: 'Size & export' },
+export const STEPS: { id: Step; label: string; short: string }[] = [
+  { id: 'photo', label: 'Photo & address', short: 'Photo' },
+  { id: 'straighten', label: 'Straighten', short: 'Straighten' },
+  { id: 'trace', label: 'Trace', short: 'Trace' },
+  { id: 'details', label: 'Callouts & details', short: 'Details' },
+  { id: 'export', label: 'Size & export', short: 'Export' },
 ];
 
 export type Tool = 'select' | ElementKind | 'ground' | 'measure';

@@ -248,7 +248,6 @@ export interface Annotations {
   showCallouts: boolean;
   showLevels: boolean;
   showDimensions: boolean;
-  showPitch: boolean;
   showScaleBar: boolean;
   showDetailTags: boolean;
   showAddress: boolean;

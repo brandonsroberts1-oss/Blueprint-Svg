@@ -231,7 +231,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
 
   const gap = 2.2 * S;
   const dimStripW = shownLevels.length && ann.showDimensions ? 3.2 * S : 0;
-  const topPad = ann.showPitch ? 3.6 * S : 1.6 * S;
+  const topPad = 1.6 * S;
   const belowGrade = ann.showDimensions ? 4.6 * S : 1.6 * S;
   const houseW = bb ? Math.max(1, bb.x1 - bb.x0) : 40;
   const houseTop = bb ? Math.max(bb.y1, 1) : 25;
@@ -296,7 +296,6 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
   const fromPaper = (p: Vec): Vec => ({ x: (p.x - hx0) / k + bx0, y: (gradeY - p.y) / k });
   const houseLeft = hx0;
   const houseRight = hx0 + houseWmm;
-  const knockouts: Vec[][] = [];
 
   // ----- Ground line & overall width -----
   const ext = Math.min(gap * 0.9, 9);
@@ -367,67 +366,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
     }
   }
 
-  // ----- Pitch symbols -----
-  if (bb && ann.showPitch) {
-    const cands: { a: Vec; b: Vec; pitch: number; len: number }[] = [];
-    for (const e of els) {
-      if (e.el.kind !== 'gable' && e.el.kind !== 'roof') continue;
-      const n = e.poly.length;
-      for (let i = 0; i < n; i++) {
-        const a = e.poly[i];
-        const b = e.poly[(i + 1) % n];
-        const dx = b.x - a.x;
-        const dy = b.y - a.y;
-        if (dx >= 0 || Math.abs(dx) < 2) continue; // top edges run leftward in CCW order
-        const pitch = Math.round((Math.abs(dy) / Math.abs(dx)) * 12);
-        if (pitch < 2 || pitch > 24) continue;
-        cands.push({ a, b, pitch, len: Math.hypot(dx, dy) });
-      }
-    }
-    cands.sort((p, q) => q.len - p.len);
-    const seen = new Set<number>();
-    const placed: Vec[] = [];
-    for (const c of cands) {
-      if (placed.length >= 2) break;
-      if (seen.has(c.pitch)) continue;
-      const pa = toPaper(c.a);
-      const pb = toPaper(c.b);
-      const mid = { x: (pa.x + pb.x) / 2, y: (pa.y + pb.y) / 2 };
-      if (placed.some((p) => Math.hypot(p.x - mid.x, p.y - mid.y) < 14 * S)) continue;
-      seen.add(c.pitch);
-      placed.push(mid);
-      // Outward normal (paper, y down) pointing up/away from the roof.
-      const dx = pb.x - pa.x;
-      const dy = pb.y - pa.y;
-      const l = Math.hypot(dx, dy);
-      let nx = dy / l;
-      let ny = -dx / l;
-      if (ny > 0) {
-        nx = -nx;
-        ny = -ny;
-      }
-      const L = 3.2 * S;
-      const rise = (L * c.pitch) / 12;
-      const origin = { x: mid.x + nx * 2.4 * S, y: mid.y + ny * 2.4 * S };
-      const slopeUpRight = (pb.y - pa.y) / (pb.x - pa.x) < 0;
-      const x0 = origin.x - L / 2;
-      const x1 = origin.x + L / 2;
-      const yb = origin.y;
-      const vx = slopeUpRight ? x1 : x0;
-      const hx = slopeUpRight ? x0 : x1;
-      pen.line('annotation', [{ x: hx, y: yb }, { x: vx, y: yb }, { x: vx, y: yb - rise }, { x: hx, y: yb }]);
-      pen.text(tagStyle, '12', origin.x, yb + tagStyle.size + 0.5, { align: 'center' });
-      const pitchTxt = String(c.pitch);
-      const tx = slopeUpRight ? vx + 0.7 : vx - 0.7;
-      pen.text(tagStyle, pitchTxt, tx, yb - rise / 2 + tagStyle.size / 2, { align: slopeUpRight ? 'left' : 'right' });
-      const tw = measureText(tagStyle, pitchTxt);
-      const kx0 = Math.min(x0, slopeUpRight ? x0 : tx - tw) - 0.8;
-      const kx1 = Math.max(x1, slopeUpRight ? tx + tw : x1) + 0.8;
-      knockouts.push(rectPoly(kx0, yb - rise - 0.8, kx1, yb + tagStyle.size + 1.3));
-    }
-  }
-
-  // ----- House linework (with knockouts behind symbols placed over it) -----
+  // ----- House linework -----
   if (bb) {
     const world = renderHouse(els, {
       mmPerFt: k,
@@ -435,12 +374,7 @@ export function buildSheet(project: Project, opts: { optimize?: boolean } = {}):
       detail: layout.detail,
       courseAnchorY: 8 / 12,
     });
-    const ko = knockouts.map((p) => region(p));
-    for (const s of world) {
-      const pts = s.pts.map(toPaper);
-      if (!ko.length) pen.line(s.layer, pts);
-      else for (const piece of clipPolyline(pts, null, ko)) pen.line(s.layer, piece);
-    }
+    for (const s of world) pen.line(s.layer, s.pts.map(toPaper));
   } else {
     pen.text(st(S * 1.4), 'TRACE THE HOUSE TO GENERATE THE ELEVATION', cx, (content.y0 + content.y1) / 2 - 10, { align: 'center' });
   }

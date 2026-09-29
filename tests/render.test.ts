@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
+import type { Vec } from '../src/lib/geometry/vec';
 import { demoProject } from '../src/lib/model/demo';
 import { createElement, defaultProject } from '../src/lib/model/defaults';
+import { hasPhotoWork, withoutPhoto } from '../src/lib/model/photo';
 import type { Project } from '../src/lib/model/types';
 import { optimizeStrokes } from '../src/lib/render/optimize';
 import { buildSheet } from '../src/lib/render/sheet';
 import { strokesToSvg } from '../src/lib/render/svg';
 import type { Stroke } from '../src/lib/render/types';
 import { mmPerFoot } from '../src/lib/units';
+import { migrate } from '../src/state/store';
 
 function withLayout(p: Project, patch: Partial<Project['layout']>): Project {
   return { ...p, layout: { ...p.layout, ...patch } };
@@ -82,6 +85,24 @@ describe('sheet composition', () => {
     expect(note?.side).toBe('left');
   });
 
+  it('draws no roof-pitch symbols over the roof', () => {
+    const sheet = buildSheet(demoProject());
+    const flat = (a: Vec, b: Vec) => Math.abs(a.y - b.y) < 1e-6 && Math.abs(a.x - b.x) > 1e-6;
+    const plumb = (a: Vec, b: Vec) => Math.abs(a.x - b.x) < 1e-6 && Math.abs(a.y - b.y) > 1e-6;
+    // The old symbol was a closed right triangle (run 12, rise N) in the annotation layer.
+    const triangles = sheet.strokes.filter((s) => {
+      const p = s.pts;
+      if (s.layer !== 'annotation' || p.length !== 4 || Math.hypot(p[0].x - p[3].x, p[0].y - p[3].y) > 1e-6) return false;
+      const edges = [0, 1, 2].map((i) => [p[i], p[i + 1]] as const);
+      return edges.some(([a, b]) => flat(a, b)) && edges.some(([a, b]) => plumb(a, b));
+    });
+    expect(triangles).toHaveLength(0);
+    // Projects saved while the option existed load without it.
+    const old = demoProject();
+    const loaded = migrate({ ...old, annotations: { ...old.annotations, showPitch: true } as Project['annotations'] });
+    expect('showPitch' in loaded.annotations).toBe(false);
+  });
+
   it('hides lines behind elements in front (hidden-line removal)', () => {
     const p = defaultProject();
     p.groundY = 500;
@@ -99,6 +120,28 @@ describe('sheet composition', () => {
       (s) => s.layer === 'hatch' && s.pts.some((q, i) => i > 0 && Math.abs(q.y - s.pts[i - 1].y) < 1e-6 && q.y > top && q.y < bottom && Math.min(q.x, s.pts[i - 1].x) < w1 && Math.max(q.x, s.pts[i - 1].x) > w0 && Math.abs(q.x - s.pts[i - 1].x) > (w1 - w0) * 0.9),
     );
     expect(crossing).toHaveLength(0);
+  });
+});
+
+describe('changing the photo', () => {
+  it('clears the photo and its tracing but keeps the address, notes wording and sheet settings', () => {
+    const p = demoProject();
+    p.customCallouts = [{ id: 'n1', text: 'CEDAR PORCH CEILING', anchor: { x: 700, y: 620 }, side: 'left' }];
+    p.calibration = { ...p.calibration, mode: 'measure', measure: { a: { x: 0, y: 0 }, b: { x: 100, y: 0 }, lengthFt: 16 } };
+    expect(hasPhotoWork(p)).toBe(true);
+    const q = withoutPhoto(p);
+    expect(q.photo).toBeNull();
+    expect(q.straighten).toBeNull();
+    expect(q.elements).toEqual([]);
+    expect(q.customCallouts).toEqual([]);
+    expect(q.calibration.measure).toBeNull();
+    expect(q.calibration.mode).toBe('auto');
+    expect(hasPhotoWork(q)).toBe(false);
+    expect(q.property).toEqual(p.property);
+    expect(q.annotations).toEqual(p.annotations);
+    expect(q.layout).toEqual(p.layout);
+    expect(q.calloutOverrides).toEqual(p.calloutOverrides);
+    expect(hasPhotoWork(defaultProject())).toBe(false);
   });
 });
 

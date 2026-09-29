@@ -148,7 +148,6 @@ export function defaultAnnotations(): Annotations {
     showCallouts: true,
     showLevels: true,
     showDimensions: true,
-    showPitch: true,
     showScaleBar: true,
     showDetailTags: true,
     showAddress: true,

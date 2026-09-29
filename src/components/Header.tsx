@@ -74,7 +74,10 @@ export function Header() {
             onClick={() => setStep(s.id)}
           >
             <span className="step-num">{i + 1}</span>
-            <span className="step-label">{s.label}</span>
+            <span className="step-label">
+              <span className="long">{s.label}</span>
+              <span className="short">{s.short}</span>
+            </span>
           </button>
         ))}
       </nav>

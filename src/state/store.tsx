@@ -110,14 +110,16 @@ export async function loadAutosave(): Promise<Project | null> {
   }
 }
 
-/** Fill in fields added after a project was saved. */
+/** Fill in fields added after a project was saved and drop retired ones. */
 export function migrate(p: Project): Project {
   const d = defaultProject();
+  const annotations = { ...d.annotations, ...p.annotations };
+  delete (annotations as { showPitch?: boolean }).showPitch; // roof pitch symbols were removed
   return {
     ...d,
     ...p,
     calibration: { ...d.calibration, ...p.calibration },
-    annotations: { ...d.annotations, ...p.annotations },
+    annotations,
     property: { ...d.property, ...p.property, hints: { ...(p.property?.hints ?? {}) } },
     layout: { ...d.layout, ...p.layout },
     calloutOverrides: p.calloutOverrides ?? {},
