@@ -1031,3 +1031,42 @@ input[type='range'] {
 .btn.ghost.danger {
   color: var(--danger);
 }
+
+/* On-device auto-trace progress */
+.progress {
+  position: relative;
+  margin-top: 8px;
+  height: 26px;
+  border-radius: 7px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  font-size: 12px;
+}
+.progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(61, 139, 253, 0.35);
+  transition: width 0.25s ease;
+}
+.progress span {
+  position: relative;
+  display: block;
+  padding: 5px 9px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.autotrace-banner {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 6;
+  width: min(460px, calc(100% - 32px));
+  background: rgba(10, 19, 32, 0.94);
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}

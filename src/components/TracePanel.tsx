@@ -11,17 +11,19 @@ import { useStore } from '../state/store';
 import { type Tool, useUI } from '../state/ui';
 import { ElementProps } from './ElementProps';
 import { HOTKEYS } from './TraceEditor';
+import { useAutoTrace } from './useAutoTrace';
 
 const hotkeyFor = (t: Tool) => Object.entries(HOTKEYS).find(([, v]) => v === t)?.[0]?.toUpperCase();
 
 function AiSection() {
   const { project, update } = useStore();
-  const { settings, notify, setSelectedId, setSettingsOpen } = useUI();
+  const { settings, notify, setSelectedId, setSettingsOpen, autoTrace } = useUI();
+  const { start } = useAutoTrace();
   const aiReady = settings.anthropicKey.trim().length > 0;
   const [busy, setBusy] = useState(false);
-  const run = async () => {
+  const runClaude = async () => {
     if (!project.photo) return;
-    if (project.elements.length && !confirm('Replace your current tracing with the AI tracing?')) return;
+    if (project.elements.length && !confirm('Replace your current tracing with the Claude tracing?')) return;
     setBusy(true);
     try {
       const img = await photoForAnalysis(project.photo);
@@ -51,22 +53,39 @@ function AiSection() {
       setBusy(false);
     }
   };
+  const working = !!autoTrace || busy;
   return (
     <section>
       <h2>Trace the house</h2>
-      <button className="btn primary wide" disabled={busy} onClick={() => (aiReady ? run() : setSettingsOpen(true))}>
-        {busy ? 'Analysing photo… (up to a minute)' : aiReady ? '✨ Auto-trace with AI' : '✨ Auto-trace with AI — add your key'}
+      <button className="btn primary wide" disabled={working || !project.photo} onClick={() => start()}>
+        {autoTrace ? 'Auto-tracing…' : project.elements.length ? '✨ Auto-trace again' : '✨ Auto-trace the house'}
       </button>
-      {!aiReady && (
-        <p className="hint">
-          Optional: paste your own Anthropic API key in{' '}
-          <button className="link" onClick={() => setSettingsOpen(true)}>
-            Settings
-          </button>{' '}
-          to let Claude do a first pass. Or trace by hand with the tools below.
+      {autoTrace ? (
+        <div className="progress" role="status">
+          <div className="progress-bar" style={{ width: `${Math.round(autoTrace.fraction * 100)}%` }} />
+          <span>{autoTrace.message}</span>
+        </div>
+      ) : (
+        <p className="muted small">
+          Free and private: it runs on this device, no account or key needed. The first run downloads about 34 MB of models; after that it takes a few
+          seconds. Then fine-tune anything with the tools below.
         </p>
       )}
-      {aiReady && <p className="muted small">Uses {settings.model}. The result is a starting point — drag corners to match the photo exactly.</p>}
+      <p className="muted small">
+        {aiReady ? (
+          <button className="link" disabled={working} onClick={runClaude}>
+            {busy ? 'Claude is tracing… (up to a minute)' : `Or trace with Claude (${settings.model})`}
+          </button>
+        ) : (
+          <>
+            Have an Anthropic API key? You can also trace with Claude —{' '}
+            <button className="link" onClick={() => setSettingsOpen(true)}>
+              add it in Settings
+            </button>
+            .
+          </>
+        )}
+      </p>
     </section>
   );
 }

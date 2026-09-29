@@ -72,7 +72,7 @@ function snapPoints(project: Project, excludeId?: string): Vec[] {
 
 export function TraceEditor() {
   const { project, update } = useStore();
-  const { tool, setTool, selectedId, setSelectedId, notify } = useUI();
+  const { tool, setTool, selectedId, setSelectedId, notify, autoTrace } = useUI();
   const [draft, setDraft] = useState<Draft | null>(null);
   const [showLines, setShowLines] = useState(true);
   const [photoOpacity, setPhotoOpacity] = useState(1);
@@ -230,6 +230,15 @@ export function TraceEditor() {
           {draft?.type === 'poly'
             ? 'Click to add corners · Shift = straight lines · Enter or click the first corner to finish · Backspace removes the last corner · Esc cancels'
             : KIND_INFO[drawingKind].hint}
+        </div>
+      )}
+      {autoTrace && (
+        <div className="autotrace-banner" role="status">
+          <b>✨ Auto-tracing the house…</b>
+          <div className="progress">
+            <div className="progress-bar" style={{ width: `${Math.round(autoTrace.fraction * 100)}%` }} />
+            <span>{autoTrace.message}</span>
+          </div>
         </div>
       )}
       {tool === 'ground' && <div className="draw-hint">Click where the ground meets the front wall to set the finish-grade line.</div>}

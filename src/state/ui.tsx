@@ -13,6 +13,12 @@ export const STEPS: { id: Step; label: string; short: string }[] = [
 
 export type Tool = 'select' | ElementKind | 'ground' | 'measure';
 
+/** Progress of a running on-device auto-trace (null when idle). */
+export interface AutoTraceProgress {
+  message: string;
+  fraction: number;
+}
+
 export interface Toast {
   id: number;
   text: string;
@@ -39,6 +45,8 @@ interface UI {
   /** Text of a note waiting to be placed by clicking the sheet preview. */
   pendingNote: string | null;
   setPendingNote: (t: string | null) => void;
+  autoTrace: AutoTraceProgress | null;
+  setAutoTrace: (p: AutoTraceProgress | null) => void;
 }
 
 const Ctx = createContext<UI | null>(null);
@@ -57,6 +65,7 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [previewMode, setPreviewMode] = useState<'blueprint' | 'laser'>('blueprint');
   const [pendingNote, setPendingNote] = useState<string | null>(null);
+  const [autoTrace, setAutoTrace] = useState<AutoTraceProgress | null>(null);
   const dismiss = useCallback((id: number) => setToasts((t) => t.filter((x) => x.id !== id)), []);
   const notify = useCallback(
     (text: string, kind: Toast['kind'] = 'info') => {
@@ -85,8 +94,10 @@ export function UIProvider({ children }: { children: ReactNode }) {
       setPreviewMode,
       pendingNote,
       setPendingNote,
+      autoTrace,
+      setAutoTrace,
     }),
-    [step, selectedId, tool, settings, setSettings, settingsOpen, toasts, notify, dismiss, previewMode, pendingNote],
+    [step, selectedId, tool, settings, setSettings, settingsOpen, toasts, notify, dismiss, previewMode, pendingNote, autoTrace],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

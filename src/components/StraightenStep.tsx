@@ -1,6 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { type Mat3, applyH, estimateRectAspect, homographyFromPoints, invertH, multiplyH } from '../lib/geometry/homography';
 import type { Vec } from '../lib/geometry/vec';
+import { wallHintFrom } from '../lib/autotrace/client';
 import { loadImage, resizeImage, warpToRectangle } from '../lib/image/imageUtils';
 import type { HouseElement, Project } from '../lib/model/types';
 import { isPolyElement } from '../lib/model/types';
@@ -8,6 +9,7 @@ import { formatFtIn, parseLength } from '../lib/units';
 import { useStore } from '../state/store';
 import { useUI } from '../state/ui';
 import { ChangePhotoButton } from './PhotoActions';
+import { useAutoTrace } from './useAutoTrace';
 import { Viewport } from './Viewport';
 
 const CORNER_NAMES = ['top-left', 'top-right', 'bottom-right', 'bottom-left'];
@@ -59,6 +61,7 @@ function applyNewPhoto(p: Project, photo: Project['photo'], H: Mat3, quad: Vec[]
 export function StraightenPanel() {
   const { project, update } = useStore();
   const { setStep, notify } = useUI();
+  const { start: autoTrace } = useAutoTrace();
   const st = project.straighten;
   const [busy, setBusy] = useState(false);
   const [widthText, setWidthText] = useState(st?.knownWidthFt ? formatFtIn(st.knownWidthFt) : '');
@@ -83,9 +86,11 @@ export function StraightenPanel() {
       const img = await loadImage(st.original.dataUrl);
       const res = warpToRectangle(img, st.quad, aspect);
       if (!res) throw new Error('Those corners do not form a usable rectangle — make sure they go around clockwise.');
+      const fresh = project.elements.length === 0;
       update((p) => applyNewPhoto(p, res.photo, res.H, st.quad));
       setStep('trace');
-      notify('Photo straightened. Next, trace the house (or let AI do a first pass).', 'success');
+      if (fresh) autoTrace({ photo: res.photo, wallHint: wallHintFrom({ ...st, H: [...res.H] }), confirmReplace: false });
+      else notify('Photo straightened. Your tracing was moved onto the new photo.', 'success');
     } catch (e) {
       notify((e as Error).message, 'error');
     } finally {
@@ -99,8 +104,10 @@ export function StraightenPanel() {
       const img = await loadImage(st.original.dataUrl);
       const photo = resizeImage(img, 2400, 0.9);
       const s = photo.width / st.original.width;
+      const fresh = project.elements.length === 0;
       update((p) => applyNewPhoto(p, photo, [s, 0, 0, 0, s, 0, 0, 0, 1], null));
       setStep('trace');
+      if (fresh) autoTrace({ photo, wallHint: null, confirmReplace: false });
     } finally {
       setBusy(false);
     }
