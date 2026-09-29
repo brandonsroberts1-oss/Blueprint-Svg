@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { parseElevation } from '../server/property/elevation';
-import { fromCensusMatch, fromNominatim } from '../server/property/geocode';
-import { analyzeFootprint, parseStreetAddress, streetCore, type OverpassResponse } from '../server/property/osm';
-import { fromAttom, fromRentcast } from '../server/property/records';
-import { lookupProperty } from '../server/property/index';
+import { parseElevation, parseOpenMeteo } from '../src/lib/property/elevation';
+import { fromCensusMatch, fromNominatim } from '../src/lib/property/geocode';
+import { analyzeFootprint, parseStreetAddress, streetCore, type OverpassResponse } from '../src/lib/property/osm';
+import { fromAttom, fromRentcast } from '../src/lib/property/records';
+import { lookupProperty } from '../src/lib/property/index';
+import { DEFAULT_SETTINGS, loadSettings, recordProviders, saveSettings } from '../src/lib/settings';
 
 describe('geocoder parsing', () => {
   it('parses a Census match', () => {
@@ -135,18 +136,18 @@ describe('assessor records', () => {
     expect(parseElevation({ value: 812.34 })).toBeCloseTo(812.34);
     expect(parseElevation({ value: '101.5' })).toBeCloseTo(101.5);
     expect(parseElevation({ value: -1000000 })).toBeNull();
+    expect(parseOpenMeteo({ elevation: [100] })).toBeCloseTo(328.084);
+    expect(parseOpenMeteo({})).toBeNull();
   });
 });
 
 describe('lookupProperty orchestration', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
-    delete process.env.RENTCAST_API_KEY;
   });
 
   it('combines geocoder, elevation, footprint and records, reporting failures per source', async () => {
-    process.env.RENTCAST_API_KEY = 'test-key';
-    const fetchMock = vi.fn(async (url: string | URL) => {
+    const fetchMock = vi.fn(async (url: string | URL, _init?: RequestInit) => {
       const u = String(url);
       const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
       if (u.includes('geocoding.geo.census.gov'))
@@ -164,7 +165,7 @@ describe('lookupProperty orchestration', () => {
       return new Response('not found', { status: 404 });
     });
     vi.stubGlobal('fetch', fetchMock);
-    const r = await lookupProperty('1234 Maple Ridge Ln, Springfield, IL 62704');
+    const r = await lookupProperty('1234 Maple Ridge Ln, Springfield, IL 62704', { rentcastKey: 'test-key', email: 'me@example.com' });
     expect(r.address?.line1).toBe('1234 MAPLE RIDGE LN');
     expect(r.address?.county).toBe('Sangamon County');
     expect(r.elevationFt).toBeCloseTo(598.2);
@@ -177,21 +178,59 @@ describe('lookupProperty orchestration', () => {
     expect(status['Assessor records (RentCast)']).toBe('ok');
     const rentcastCall = fetchMock.mock.calls.find(([u]) => String(u).includes('rentcast'));
     expect(rentcastCall).toBeDefined();
+    expect((rentcastCall![1]?.headers as Record<string, string>)['X-Api-Key']).toBe('test-key');
+    const nominatimCall = fetchMock.mock.calls.find(([u]) => String(u).includes('nominatim'));
+    expect(String(nominatimCall![0])).toContain('email=me%40example.com');
+  });
+
+  it('falls back to Open-Meteo elevation and reports blocked services without throwing', async () => {
+    const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string | URL) => {
+        const u = String(url);
+        if (u.includes('geocoding.geo.census.gov')) throw new TypeError('Failed to fetch');
+        if (u.includes('nominatim'))
+          return json([{ lat: '39.78', lon: '-89.65', osm_type: 'way', osm_id: 7, category: 'highway', address: { house_number: '9', road: 'Elm Street', city: 'Springfield', state: 'Illinois', postcode: '62704' } }]);
+        if (u.includes('epqs.nationalmap.gov')) throw new TypeError('Failed to fetch');
+        if (u.includes('open-meteo')) return json({ elevation: [180] });
+        if (u.includes('overpass-api.de')) return json({ elements: [] });
+        return new Response('nope', { status: 404 });
+      }),
+    );
+    const r = await lookupProperty('9 Elm Street, Springfield, IL');
+    expect(r.address?.line1).toBe('9 Elm Street');
+    expect(r.elevationFt).toBeCloseTo(590.55, 1);
+    const status = Object.fromEntries(r.sources.map((s) => [s.name, s]));
+    expect(status['US Census geocoder'].status).toBe('error');
+    expect(status['US Census geocoder'].message).toMatch(/blocked or offline/);
+    expect(status['Elevation (Open-Meteo)'].status).toBe('ok');
+    expect(status['Assessor records'].status).toBe('skipped');
   });
 });
 
-describe('rate limiter', () => {
-  it('rejects requests over the limit with 429', async () => {
-    const { rateLimit } = await import('../server/rateLimit');
-    const mw = rateLimit({ windowMs: 60000, max: 2, name: 'test' });
-    const statuses: number[] = [];
-    for (let i = 0; i < 3; i++) {
-      let status = 200;
-      const res = { setHeader: () => undefined, status: (s: number) => ((status = s), res), json: () => res } as never;
-      let passed = false;
-      mw({ ip: '1.2.3.4', socket: {} } as never, res, () => (passed = true));
-      statuses.push(passed ? 200 : status);
-    }
-    expect(statuses).toEqual([200, 200, 429]);
+
+describe('settings', () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  function fakeStorage() {
+    const m = new Map<string, string>();
+    return { getItem: (k: string) => m.get(k) ?? null, setItem: (k: string, v: string) => void m.set(k, v), removeItem: (k: string) => void m.delete(k), m };
+  }
+
+  it('remembers keys in localStorage or only for the session', () => {
+    const local = fakeStorage();
+    const session = fakeStorage();
+    vi.stubGlobal('localStorage', local);
+    vi.stubGlobal('sessionStorage', session);
+    expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
+    saveSettings({ ...DEFAULT_SETTINGS, anthropicKey: 'sk-1', rentcastKey: 'rc', remember: true });
+    expect(local.m.size).toBe(1);
+    expect(loadSettings().anthropicKey).toBe('sk-1');
+    saveSettings({ ...DEFAULT_SETTINGS, anthropicKey: 'sk-2', remember: false });
+    expect(local.m.size).toBe(0);
+    expect(session.m.size).toBe(1);
+    expect(loadSettings()).toMatchObject({ anthropicKey: 'sk-2', model: 'claude-opus-5' });
+    expect(recordProviders({ rentcastKey: ' ', attomKey: 'a' })).toEqual(['ATTOM']);
   });
 });

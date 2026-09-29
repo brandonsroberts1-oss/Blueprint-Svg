@@ -1,30 +1,15 @@
+import { lookupProperty } from './lib/property/index';
+import type { Settings } from './lib/settings';
 import type { AnalyzeResponse } from './lib/shared/analysisSchema';
-import type { PropertyLookup, ServerConfig } from './lib/shared/property';
+import type { PropertyLookup } from './lib/shared/property';
 
-async function json<T>(res: Response): Promise<T> {
-  const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error((body as { error?: string }).error ?? `Request failed (${res.status})`);
-  return body as T;
+/** Public-record lookup, straight from the browser to each public service. */
+export function lookupAddress(address: string, s: Settings): Promise<PropertyLookup> {
+  return lookupProperty(address, { rentcastKey: s.rentcastKey, attomKey: s.attomKey, email: s.email });
 }
 
-export async function getConfig(): Promise<ServerConfig> {
-  try {
-    return await json<ServerConfig>(await fetch('/api/config'));
-  } catch {
-    return { ai: false, aiModel: null, recordProviders: [] };
-  }
-}
-
-export async function lookupAddress(address: string): Promise<PropertyLookup> {
-  return json<PropertyLookup>(await fetch(`/api/property?address=${encodeURIComponent(address)}`));
-}
-
-export async function analyzeImage(image: string, width: number, height: number): Promise<AnalyzeResponse> {
-  return json<AnalyzeResponse>(
-    await fetch('/api/analyze', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ image, width, height }),
-    }),
-  );
+/** AI tracing with the user's own Anthropic key. The SDK is loaded only when first used. */
+export async function analyzeImage(image: string, width: number, height: number, s: Settings): Promise<AnalyzeResponse> {
+  const { analyzePhoto } = await import('./lib/ai/analyze');
+  return analyzePhoto({ image, width, height }, { apiKey: s.anthropicKey, model: s.model });
 }

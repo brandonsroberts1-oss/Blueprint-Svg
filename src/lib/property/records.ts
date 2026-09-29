@@ -1,4 +1,4 @@
-import type { AssessorRecord } from '../../src/lib/shared/property';
+import type { AssessorRecord } from '../shared/property';
 import { fetchJson } from './http';
 
 type Json = Record<string, unknown>;

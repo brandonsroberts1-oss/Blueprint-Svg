@@ -1,10 +1,11 @@
 import * as z from 'zod';
+import { KINDS } from './kinds';
 
 /**
  * Structured output returned by the photo analysis (Claude vision). Coordinates are
  * pixels of the image that was analysed (x right, y down).
  */
-export const KINDS = ['wall', 'roof', 'gable', 'chimney', 'window', 'door', 'garage', 'vent', 'column', 'railing', 'steps', 'trim', 'light'] as const;
+export { KINDS };
 
 /**
  * Enumerations are expressed as strings that list their allowed values. The SDK sends

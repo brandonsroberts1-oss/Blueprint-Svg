@@ -3,6 +3,7 @@ import { lookupAddress } from '../api';
 import { importPhoto } from '../lib/image/imageUtils';
 import { demoWithSketch } from '../lib/model/demoPhoto';
 import { FACT_LABELS, applyLookup } from '../lib/model/facts';
+import { recordProviders } from '../lib/settings';
 import type { FactKey } from '../lib/model/types';
 import type { PropertyLookup } from '../lib/shared/property';
 import { formatFtIn } from '../lib/units';
@@ -57,7 +58,7 @@ function usePhotoUpload() {
 
 export function PhotoPanel() {
   const { project, update } = useStore();
-  const { setStep, notify, config } = useUI();
+  const { setStep, notify, settings, setSettingsOpen } = useUI();
   const { upload, busy } = usePhotoUpload();
   const fileRef = useRef<HTMLInputElement>(null);
   const [address, setAddress] = useState(project.property.address);
@@ -69,7 +70,7 @@ export function PhotoPanel() {
     if (address.trim().length < 5) return;
     setLooking(true);
     try {
-      const r = await lookupAddress(address.trim());
+      const r = await lookupAddress(address.trim(), settings);
       setResult(r);
       update((p) => ({ ...p, property: applyLookup(p.property, r) }));
       if (!r.address) {
@@ -77,7 +78,7 @@ export function PhotoPanel() {
         const unreachable = geocoders.length > 0 && geocoders.every((s) => s.status === 'error');
         notify(
           unreachable
-            ? 'Could not reach the address services from the server (details below). You can still type the address and facts by hand.'
+            ? 'Could not reach the address services (details below). You can still type the address and facts by hand.'
             : 'Address not found. Check the spelling, or enter the details by hand below.',
           'error',
         );
@@ -138,13 +139,17 @@ export function PhotoPanel() {
             {looking ? 'Searching…' : 'Look up'}
           </button>
         </form>
-        {!config.recordProviders.length && (
+        {!recordProviders(settings).length && (
           <p className="hint">
             Free sources give the address, coordinates, elevation and building footprint. For year built, square footage and lot size, add a{' '}
             <a href="https://www.rentcast.io/api" target="_blank" rel="noreferrer">
               RentCast
             </a>{' '}
-            or ATTOM API key on the server (see README).
+            or ATTOM key in{' '}
+            <button className="link" onClick={() => setSettingsOpen(true)}>
+              Settings
+            </button>
+            .
           </p>
         )}
         {result && (

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
-import { getConfig } from './api';
 import { DetailsPanel } from './components/DetailsPanel';
 import { ExportPanel } from './components/ExportPanel';
 import { Header } from './components/Header';
+import { SettingsDialog } from './components/SettingsDialog';
 import { PhotoMain, PhotoPanel } from './components/PhotoStep';
 import { SheetPreview } from './components/SheetPreview';
 import { StraightenCanvas, StraightenPanel } from './components/StraightenStep';
@@ -14,13 +14,9 @@ import { loadAutosave, useStore } from './state/store';
 import { useUI } from './state/ui';
 
 export default function App() {
-  const { step, setStep, setConfig, notify } = useUI();
+  const { step, setStep, notify } = useUI();
   const { replace } = useStore();
   const restored = useRef(false);
-
-  useEffect(() => {
-    getConfig().then(setConfig);
-  }, [setConfig]);
 
   useEffect(() => {
     if (restored.current) return;
@@ -53,6 +49,7 @@ export default function App() {
             {(step === 'details' || step === 'export') && <SheetPreview />}
           </main>
         </div>
+        <SettingsDialog />
         <Toasts />
       </div>
     </SheetProvider>

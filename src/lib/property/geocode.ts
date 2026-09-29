@@ -8,8 +8,10 @@ export interface GeoResult {
   full: string;
   county?: string;
   state?: string;
-  /** Present when the geocoder matched a specific OSM building. */
+  /** The OSM object the geocoder matched. */
   osm?: { type: 'way' | 'relation' | 'node'; id: number };
+  /** True when that object is a building (not a road or address point). */
+  isBuilding?: boolean;
   source: 'US Census geocoder' | 'OpenStreetMap Nominatim';
 }
 
@@ -62,6 +64,8 @@ interface NominatimResult {
   lon: string;
   osm_type?: string;
   osm_id?: number;
+  category?: string;
+  class?: string;
   display_name?: string;
   address?: Record<string, string>;
 }
@@ -69,9 +73,10 @@ interface NominatimResult {
 const nominatimQueue = throttle(1100);
 
 /** OpenStreetMap Nominatim (worldwide; please keep volume low per its usage policy). */
-export async function geocodeNominatim(address: string): Promise<GeoResult | null> {
-  const url =
-    'https://nominatim.openstreetmap.org/search?' + new URLSearchParams({ q: address, format: 'jsonv2', addressdetails: '1', limit: '1' });
+export async function geocodeNominatim(address: string, email = ''): Promise<GeoResult | null> {
+  const params = new URLSearchParams({ q: address, format: 'jsonv2', addressdetails: '1', limit: '1' });
+  if (email.trim()) params.set('email', email.trim());
+  const url = 'https://nominatim.openstreetmap.org/search?' + params;
   const data = await nominatimQueue(() => fetchJson<NominatimResult[]>(url));
   const r = data[0];
   if (!r) return null;
@@ -95,6 +100,7 @@ export function fromNominatim(r: NominatimResult): GeoResult {
     county: a.county,
     state: a.state,
     osm: osmType && r.osm_id ? { type: osmType, id: r.osm_id } : undefined,
+    isBuilding: (r.category ?? r.class) === 'building' && osmType !== 'node',
     source: 'OpenStreetMap Nominatim',
   };
 }

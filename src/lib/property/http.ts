@@ -1,8 +1,3 @@
-export function userAgent(): string {
-  const contact = process.env.CONTACT_EMAIL?.trim();
-  return `BlueprintEngraver/0.1 (house elevation drawing app${contact ? `; ${contact}` : ''})`;
-}
-
 export class HttpError extends Error {
   constructor(
     message: string,
@@ -12,16 +7,21 @@ export class HttpError extends Error {
   }
 }
 
-export async function fetchJson<T = unknown>(
-  url: string,
-  init: RequestInit & { timeoutMs?: number } = {},
-): Promise<T> {
-  const { timeoutMs = 15000, headers, ...rest } = init;
-  const res = await fetch(url, {
-    ...rest,
-    headers: { 'User-Agent': userAgent(), Accept: 'application/json', ...(headers ?? {}) },
-    signal: AbortSignal.timeout(timeoutMs),
-  });
+/**
+ * fetch + JSON with a timeout. Runs in the browser (and in Node for tests), so it
+ * sends no custom User-Agent; browsers identify the page via the Referer header.
+ */
+export async function fetchJson<T = unknown>(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
+  const { timeoutMs = 15000, ...rest } = init;
+  let res: Response;
+  try {
+    res = await fetch(url, { ...rest, signal: AbortSignal.timeout(timeoutMs) });
+  } catch (e) {
+    const name = (e as Error)?.name;
+    if (name === 'TimeoutError' || name === 'AbortError') throw new Error('Timed out');
+    // In a browser this is usually the service not allowing requests from web pages (CORS) or no network.
+    throw new Error('Could not reach the service from this browser (blocked or offline)');
+  }
   if (!res.ok) {
     let detail = '';
     try {

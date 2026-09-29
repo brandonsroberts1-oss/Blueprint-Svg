@@ -910,6 +910,27 @@ input[type='range'] {
   border-left-color: var(--ok);
 }
 
+@media (max-width: 1560px) {
+  .brand-sub {
+    display: none;
+  }
+  .brand {
+    min-width: 0;
+  }
+}
+
+@media (max-width: 1400px) {
+  /* Visually hidden but still read by screen readers. */
+  .step:not(.active) .step-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
 @media (max-width: 900px) {
   .body {
     flex-direction: column-reverse;
@@ -937,4 +958,30 @@ input[type='range'] {
 /* The laser file has no background; preview it on white "material". */
 .preview-wrap.laser .sheet {
   background: #ffffff;
+}
+
+/* Settings dialog */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  background: rgba(3, 8, 16, 0.66);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.modal {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.55);
+}
+.modal .secret {
+  margin: 0;
+}
+.btn.ghost.danger {
+  color: var(--danger);
 }

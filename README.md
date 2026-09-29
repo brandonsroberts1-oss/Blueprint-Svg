@@ -32,42 +32,52 @@ callouts, level lines and a title block — and export an SVG that engraves clea
 
 ![Tracing editor with the blueprint overlay](docs/editor.png)
 
-## Quick start
+## Use it
+
+**Live site:** https://brandonsroberts1-oss.github.io/Blueprint-Svg/ — a static web app that runs
+entirely in your browser. Photos, tracings and keys never leave your computer except for the
+public-record and AI requests described below. Click **Demo** in the header to load a sample
+house and explore every step without a photo.
+
+### Publishing on GitHub Pages
+
+The workflow in `.github/workflows/deploy-pages.yml` builds the site, runs the tests and publishes
+it to the `gh-pages` branch on every push to `main` (and to the feature branch it was built on).
+One-time setup in the repository: **Settings → Pages → Build and deployment → Source: Deploy from
+a branch → Branch: `gh-pages`, folder `/ (root)` → Save**. The site appears at
+`https://<owner>.github.io/<repo>/` a minute later.
+
+Because the build uses relative paths, the `dist/` folder also works on any other static host
+(Netlify, Cloudflare Pages, S3…).
+
+### Run locally
 
 ```bash
 npm install
-cp .env.example .env      # optional — add API keys (see below)
 npm run dev               # http://localhost:5173
+npm run build             # static site in dist/
+npm run preview           # serve the built site
 ```
 
-Click **Demo** in the header to load a sample house and explore every step without a photo.
+### Settings (⚙ in the header, all optional)
 
-Production:
-
-```bash
-npm run build
-npm start                 # serves dist/ and the API on $PORT (default 5173)
-```
-
-or with Docker: `docker build -t blueprint-engraver . && docker run -p 8080:8080 --env-file .env blueprint-engraver`.
-
-> If you host it publicly, remember that **Auto-trace** spends your Anthropic credits. The server
-> rate-limits per IP, but put it behind a login (or leave `ANTHROPIC_API_KEY` unset) if strangers
-> can reach it.
-
-### Configuration (`.env`, all optional)
-
-| Variable | Enables |
+| Setting | Enables |
 |---|---|
-| `ANTHROPIC_API_KEY` | “Auto-trace with AI” (Claude vision). Default model `claude-opus-5`; override with `CLAUDE_MODEL`. |
-| `RENTCAST_API_KEY` | Assessor data via [RentCast](https://www.rentcast.io/api) (free developer tier). |
-| `ATTOM_API_KEY` | Assessor data via [ATTOM](https://api.developer.attomdata.com) (used if RentCast isn't set). |
-| `CONTACT_EMAIL` | Sent in the User-Agent to OpenStreetMap services, as their usage policy asks. |
-| `PORT` | Server port. |
-| `AI_TRACES_PER_HOUR`, `LOOKUPS_PER_HOUR` | Per-IP rate limits (defaults 20 and 60). |
+| Anthropic API key | **Auto-trace with AI** (Claude vision, default model `claude-opus-5`). Create a key at [console.anthropic.com](https://console.anthropic.com/settings/keys); usage is billed to your account. |
+| RentCast API key | Assessor data via [RentCast](https://www.rentcast.io/api) (free developer tier). |
+| ATTOM API key | Assessor data via [ATTOM](https://api.developer.attomdata.com) (used if RentCast isn't set). |
+| Contact email | Sent to OpenStreetMap Nominatim with address searches, as its usage policy asks. |
+
+Keys are stored only in your browser (local storage, or for the current tab only if you untick
+**Remember on this device**) and are sent only to their own service. They are never written into
+saved project files or into the published site. Every GitHub Pages site under the same account
+shares one browser storage origin, so only keep keys there if you trust your other Pages sites;
+**Forget all keys** removes them.
 
 Without any keys the app still works end to end: you trace by hand, and the address lookup uses
-the free sources (US Census geocoder, OpenStreetMap Nominatim + Overpass, USGS elevation).
+the free sources (US Census geocoder, OpenStreetMap Nominatim + Overpass, USGS / Open-Meteo
+elevation). Some services don't accept requests from web pages (browser CORS rules) — each
+source reports its own status, and anything missing can be typed in by hand.
 
 ## Getting an accurate scale
 
@@ -115,17 +125,18 @@ you want the plaque cut out.
 
 ## Public records & privacy
 
-The lookup runs on your server. It never reads or prints owner names — only facts about the
-building. OpenStreetMap footprints are © OpenStreetMap contributors (ODbL); Census and USGS data
+The lookup runs in your browser and calls each public service directly. It never reads or prints
+owner names — only facts about the building. OpenStreetMap footprints are © OpenStreetMap contributors (ODbL); Census and USGS data
 are public domain; RentCast/ATTOM data is subject to their terms.
 
 ## AI auto-trace
 
-With `ANTHROPIC_API_KEY` set, **Auto-trace with AI** sends the straightened photo (downscaled to
-2000 px) to Claude with a structured-output schema and turns the response into editable elements.
-Server-side refusal fallbacks are enabled (`fallbacks: "default"`), so if the model declines a
-request the API retries on Anthropic's recommended fallback model. Treat the result as a first
-draft — drag corners to match the photo exactly.
+With your Anthropic key in Settings, **Auto-trace with AI** sends the straightened photo
+(downscaled to 2000 px) straight from your browser to the Claude API with a structured-output
+schema and turns the response into editable elements. The Anthropic SDK is loaded only when you
+use it. Server-side refusal fallbacks are enabled (`fallbacks: "default"`), so if the model
+declines a request the API retries on Anthropic's recommended fallback model. Treat the result as
+a first draft — drag corners to match the photo exactly.
 
 ## Development
 
@@ -136,10 +147,10 @@ npx tsx scripts/render-demo.ts out/   # render the demo house to SVG from the co
 ```
 
 ```
-server/            Express app: /api/config, /api/property, /api/analyze (Vite middleware in dev)
-  property/        Census + Nominatim geocoding, OSM footprint analysis, USGS elevation, RentCast/ATTOM
-  analyze.ts       Claude vision tracing with structured outputs
 src/lib/
+  property/        Census + Nominatim geocoding, OSM footprint analysis, elevation, RentCast/ATTOM
+  ai/              Claude vision tracing with structured outputs (lazy-loaded)
+  settings.ts      per-browser API keys and preferences
   geometry/        vectors, polygons, clipping & hatching, homography + perspective aspect estimate
   text/            single-line stroke fonts and text layout
   model/           project types, defaults, scale calibration, level lines, AI/record mapping

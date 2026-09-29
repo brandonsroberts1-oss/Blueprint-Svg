@@ -1,15 +1,21 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { betaZodOutputFormat } from '@anthropic-ai/sdk/helpers/beta/zod';
-import { AnalysisSchema, type AnalyzeRequest, type AnalyzeResponse } from '../src/lib/shared/analysisSchema';
+import { DEFAULT_MODEL } from '../settings';
+import { AnalysisSchema, type AnalyzeRequest, type AnalyzeResponse } from '../shared/analysisSchema';
 
-export const DEFAULT_MODEL = 'claude-opus-5';
-
-export function analysisModel(): string {
-  return process.env.CLAUDE_MODEL?.trim() || DEFAULT_MODEL;
+export interface AnalyzeOptions {
+  /** The user's own Anthropic API key (kept in their browser). */
+  apiKey: string;
+  model?: string;
 }
 
-export function analysisAvailable(): boolean {
-  return Boolean(process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN);
+/**
+ * Client for calling the Claude API straight from the browser. This is a static site,
+ * so there is no server to hold a key: users paste their own key, which stays in their
+ * browser and is sent only to api.anthropic.com.
+ */
+export function browserClient(apiKey: string): Anthropic {
+  return new Anthropic({ apiKey, dangerouslyAllowBrowser: true, maxRetries: 1 });
 }
 
 const SYSTEM = `You are an architectural drafter who traces photographs of houses into front-elevation drawings.
@@ -47,14 +53,16 @@ function parseDataUrl(dataUrl: string): { mediaType: 'image/jpeg' | 'image/png' 
   return { mediaType: m[1] as 'image/jpeg' | 'image/png' | 'image/webp', data: m[2] };
 }
 
-export async function analyzePhoto(req: AnalyzeRequest, client = new Anthropic()): Promise<AnalyzeResponse> {
+export async function analyzePhoto(req: AnalyzeRequest, opts: AnalyzeOptions, client?: Anthropic): Promise<AnalyzeResponse> {
   if (!req?.image || !(req.width > 0) || !(req.height > 0)) throw new AnalysisError('Missing image or size.', 400);
   const { mediaType, data } = parseDataUrl(req.image);
   if (data.length > 7_000_000) throw new AnalysisError('Image is too large; send at most ~5 MB.', 413);
-  const model = analysisModel();
+  if (!client && !opts.apiKey.trim()) throw new AnalysisError('Add your Anthropic API key in Settings to use AI tracing.', 401);
+  const model = opts.model?.trim() || DEFAULT_MODEL;
+  const api = client ?? browserClient(opts.apiKey.trim());
 
   try {
-    const response = await client.beta.messages.parse({
+    const response = await api.beta.messages.parse({
       model,
       max_tokens: 16000,
       // Server-side fallback: if the model declines, the API retries on a recommended fallback model.
@@ -80,7 +88,9 @@ export async function analyzePhoto(req: AnalyzeRequest, client = new Anthropic()
     return { analysis, model: response.model ?? model, width: req.width, height: req.height };
   } catch (err) {
     if (err instanceof AnalysisError) throw err;
-    if (err instanceof Anthropic.AuthenticationError) throw new AnalysisError('The Anthropic API key was rejected.', 401);
+    if (err instanceof Anthropic.AuthenticationError) throw new AnalysisError('Your Anthropic API key was rejected — check it in Settings.', 401);
+    if (err instanceof Anthropic.PermissionDeniedError) throw new AnalysisError(`Your Anthropic key doesn't have access to ${model}: ${err.message}`, 403);
+    if (err instanceof Anthropic.APIConnectionError) throw new AnalysisError('Could not reach api.anthropic.com from this browser — check your connection.', 503);
     if (err instanceof Anthropic.RateLimitError) throw new AnalysisError('Rate limited by the Anthropic API — try again shortly.', 429);
     if (err instanceof Anthropic.BadRequestError) throw new AnalysisError(`The Anthropic API rejected the request: ${err.message}`, 400);
     if (err instanceof Anthropic.APIError) throw new AnalysisError(`Anthropic API error ${err.status ?? ''}: ${err.message}`, 502);

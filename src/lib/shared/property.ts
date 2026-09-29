@@ -1,4 +1,4 @@
-/** Response of GET /api/property — public-record facts about an address. */
+/** Result of lookupProperty() — public-record facts about an address. */
 
 export type SourceStatus = 'ok' | 'empty' | 'error' | 'skipped';
 
@@ -67,10 +67,4 @@ export interface PropertyLookup {
   building: BuildingFootprint | null;
   record: AssessorRecord | null;
   sources: SourceReport[];
-}
-
-export interface ServerConfig {
-  ai: boolean;
-  aiModel: string | null;
-  recordProviders: string[];
 }

@@ -1,5 +1,6 @@
 import type { Vec } from '../geometry/vec';
-import { type Analysis, type DetectedElement, KINDS } from '../shared/analysisSchema';
+import type { Analysis, DetectedElement } from '../shared/analysisSchema';
+import { KINDS } from '../shared/kinds';
 import { createElement, sortIntoBands } from './defaults';
 import type {
   ChimneyMaterial,

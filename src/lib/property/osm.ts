@@ -1,6 +1,6 @@
-import { minAreaRect, pointInPolygon, pointSegmentDistance, area as polyArea, centroid } from '../../src/lib/geometry/polygon';
-import type { Vec } from '../../src/lib/geometry/vec';
-import type { BuildingFootprint } from '../../src/lib/shared/property';
+import { minAreaRect, pointInPolygon, pointSegmentDistance, area as polyArea, centroid } from '../geometry/polygon';
+import type { Vec } from '../geometry/vec';
+import type { BuildingFootprint } from '../shared/property';
 import type { GeoResult } from './geocode';
 import { fetchJson, throttle } from './http';
 

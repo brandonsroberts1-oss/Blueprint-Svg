@@ -1,6 +1,6 @@
 import { createContext, type ReactNode, useCallback, useContext, useMemo, useState } from 'react';
 import type { ElementKind } from '../lib/model/types';
-import type { ServerConfig } from '../lib/shared/property';
+import { type Settings, loadSettings, saveSettings } from '../lib/settings';
 
 export type Step = 'photo' | 'straighten' | 'trace' | 'details' | 'export';
 export const STEPS: { id: Step; label: string }[] = [
@@ -26,8 +26,11 @@ interface UI {
   setSelectedId: (id: string | null) => void;
   tool: Tool;
   setTool: (t: Tool) => void;
-  config: ServerConfig;
-  setConfig: (c: ServerConfig) => void;
+  /** API keys and preferences stored in this browser. */
+  settings: Settings;
+  setSettings: (s: Settings) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
   toasts: Toast[];
   notify: (text: string, kind?: Toast['kind']) => void;
   dismiss: (id: number) => void;
@@ -45,7 +48,12 @@ export function UIProvider({ children }: { children: ReactNode }) {
   const [step, setStep] = useState<Step>('photo');
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [tool, setTool] = useState<Tool>('select');
-  const [config, setConfig] = useState<ServerConfig>({ ai: false, aiModel: null, recordProviders: [] });
+  const [settings, setSettingsState] = useState<Settings>(() => loadSettings());
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const setSettings = useCallback((s: Settings) => {
+    saveSettings(s);
+    setSettingsState(s);
+  }, []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [previewMode, setPreviewMode] = useState<'blueprint' | 'laser'>('blueprint');
   const [pendingNote, setPendingNote] = useState<string | null>(null);
@@ -59,8 +67,26 @@ export function UIProvider({ children }: { children: ReactNode }) {
     [dismiss],
   );
   const value = useMemo(
-    () => ({ step, setStep, selectedId, setSelectedId, tool, setTool, config, setConfig, toasts, notify, dismiss, previewMode, setPreviewMode, pendingNote, setPendingNote }),
-    [step, selectedId, tool, config, toasts, notify, dismiss, previewMode, pendingNote],
+    () => ({
+      step,
+      setStep,
+      selectedId,
+      setSelectedId,
+      tool,
+      setTool,
+      settings,
+      setSettings,
+      settingsOpen,
+      setSettingsOpen,
+      toasts,
+      notify,
+      dismiss,
+      previewMode,
+      setPreviewMode,
+      pendingNote,
+      setPendingNote,
+    }),
+    [step, selectedId, tool, settings, setSettings, settingsOpen, toasts, notify, dismiss, previewMode, pendingNote],
   );
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

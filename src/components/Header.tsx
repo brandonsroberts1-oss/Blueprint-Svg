@@ -7,7 +7,7 @@ import { migrate, useStore } from '../state/store';
 import { STEPS, useUI } from '../state/ui';
 
 export function Header() {
-  const { step, setStep, notify, setSelectedId } = useUI();
+  const { step, setStep, notify, setSelectedId, setSettingsOpen } = useUI();
   const { project, replace, undo, redo, canUndo, canRedo } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -69,6 +69,7 @@ export function Header() {
           <button
             key={s.id}
             className={`step ${s.id === step ? 'active' : ''} ${i < stepIndex ? 'done' : ''}`}
+            title={`${i + 1}. ${s.label}`}
             disabled={!available(s.id)}
             onClick={() => setStep(s.id)}
           >
@@ -113,6 +114,9 @@ export function Header() {
         </button>
         <button className="btn ghost" onClick={save} disabled={!project.photo && !project.elements.length}>
           Save
+        </button>
+        <button className="icon-btn" title="Settings — API keys for AI tracing and assessor records" aria-label="Settings" onClick={() => setSettingsOpen(true)}>
+          ⚙
         </button>
         <input
           ref={fileRef}

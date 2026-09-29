@@ -8,9 +8,9 @@
     "node": ">=20.19"
   },
   "scripts": {
-    "dev": "tsx watch --clear-screen=false server/index.ts",
+    "dev": "vite",
     "build": "vite build",
-    "start": "tsx server/index.ts --production",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -18,18 +18,16 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.128.0",
-    "express": "^5.2.1",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "tsx": "^4.23.15",
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@types/express": "^5.0.3",
     "@types/node": "^22.18.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.1.1",
+    "tsx": "^4.23.15",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
     "vitest": "^5.0.2"

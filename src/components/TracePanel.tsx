@@ -16,7 +16,8 @@ const hotkeyFor = (t: Tool) => Object.entries(HOTKEYS).find(([, v]) => v === t)?
 
 function AiSection() {
   const { project, update } = useStore();
-  const { config, notify, setSelectedId } = useUI();
+  const { settings, notify, setSelectedId, setSettingsOpen } = useUI();
+  const aiReady = settings.anthropicKey.trim().length > 0;
   const [busy, setBusy] = useState(false);
   const run = async () => {
     if (!project.photo) return;
@@ -24,7 +25,7 @@ function AiSection() {
     setBusy(true);
     try {
       const img = await photoForAnalysis(project.photo);
-      const res = await analyzeImage(img.dataUrl, img.width, img.height);
+      const res = await analyzeImage(img.dataUrl, img.width, img.height, settings);
       if (!res.analysis.houseFound) {
         notify('The AI could not find the front of a house in this photo.', 'error');
         return;
@@ -53,11 +54,19 @@ function AiSection() {
   return (
     <section>
       <h2>Trace the house</h2>
-      <button className="btn primary wide" disabled={!config.ai || busy} onClick={run}>
-        {busy ? 'Analysing photo… (up to a minute)' : '✨ Auto-trace with AI'}
+      <button className="btn primary wide" disabled={busy} onClick={() => (aiReady ? run() : setSettingsOpen(true))}>
+        {busy ? 'Analysing photo… (up to a minute)' : aiReady ? '✨ Auto-trace with AI' : '✨ Auto-trace with AI — add your key'}
       </button>
-      {!config.ai && <p className="hint">AI tracing is off. Set ANTHROPIC_API_KEY on the server to enable it — or trace by hand with the tools below.</p>}
-      {config.ai && <p className="muted small">Uses {config.aiModel}. The result is a starting point — drag corners to match the photo exactly.</p>}
+      {!aiReady && (
+        <p className="hint">
+          Optional: paste your own Anthropic API key in{' '}
+          <button className="link" onClick={() => setSettingsOpen(true)}>
+            Settings
+          </button>{' '}
+          to let Claude do a first pass. Or trace by hand with the tools below.
+        </p>
+      )}
+      {aiReady && <p className="muted small">Uses {settings.model}. The result is a starting point — drag corners to match the photo exactly.</p>}
     </section>
   );
 }

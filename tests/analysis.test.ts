@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type Anthropic from '@anthropic-ai/sdk';
-import { AnalysisError, analyzePhoto } from '../server/analyze';
+import { AnalysisError, analyzePhoto } from '../src/lib/ai/analyze';
 import { elementsFromAnalysis } from '../src/lib/model/fromAnalysis';
 import type { Analysis } from '../src/lib/shared/analysisSchema';
 
@@ -68,7 +68,7 @@ describe('analyzePhoto', () => {
   it('requests structured output with fallbacks and returns the parsed tracing', async () => {
     const parse = vi.fn(async (_params: unknown) => ({ stop_reason: 'end_turn', parsed_output: sample, model: 'claude-opus-5' }));
     const client = { beta: { messages: { parse } } } as unknown as Anthropic;
-    const res = await analyzePhoto({ image, width: 1000, height: 1000 }, client);
+    const res = await analyzePhoto({ image, width: 1000, height: 1000 }, { apiKey: 'sk-test', model: '' }, client);
     expect(res.analysis.elements).toHaveLength(8);
     const params = parse.mock.calls[0][0] as { model: string; fallbacks: string; betas: string[]; output_config: { format: unknown }; messages: { content: { type: string }[] }[] };
     expect(params.model).toBe('claude-opus-5');
@@ -80,8 +80,9 @@ describe('analyzePhoto', () => {
 
   it('reports refusals and bad input', async () => {
     const client = { beta: { messages: { parse: async () => ({ stop_reason: 'refusal', parsed_output: null }) } } } as unknown as Anthropic;
-    await expect(analyzePhoto({ image, width: 10, height: 10 }, client)).rejects.toMatchObject({ status: 422 });
-    await expect(analyzePhoto({ image: 'nope', width: 10, height: 10 }, client)).rejects.toBeInstanceOf(AnalysisError);
+    await expect(analyzePhoto({ image, width: 10, height: 10 }, { apiKey: 'sk-test' }, client)).rejects.toMatchObject({ status: 422 });
+    await expect(analyzePhoto({ image: 'nope', width: 10, height: 10 }, { apiKey: 'sk-test' }, client)).rejects.toBeInstanceOf(AnalysisError);
+    await expect(analyzePhoto({ image, width: 10, height: 10 }, { apiKey: '  ' })).rejects.toMatchObject({ status: 401 });
   });
 });
 
