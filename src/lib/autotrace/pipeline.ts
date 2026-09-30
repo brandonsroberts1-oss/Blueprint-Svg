@@ -3,16 +3,16 @@ import { type Detection, decodeYolo } from './decode';
 import { type HouseParseDebug, type Rect, type SegGrid, parseHouse } from './house';
 import { components, maskWhere, openMask } from './mask';
 import { HOUSE_CLASSES, MODELS, type ModelName } from './models';
-import { type Raster, letterbox } from './raster';
+import { type Raster, inputSize, letterbox } from './raster';
 
 export interface ModelOutput {
   data: Float32Array | Uint8Array | Int32Array | BigInt64Array;
   dims: readonly number[];
 }
 
-/** Runs one of the on-device models on a CHW float tensor. */
+/** Runs one of the on-device models on a CHW float tensor of `h` × `w` pixels. */
 export interface ModelRunner {
-  run(name: ModelName, input: Float32Array): Promise<ModelOutput>;
+  run(name: ModelName, input: Float32Array, w: number, h: number): Promise<ModelOutput>;
 }
 
 export interface AutoTraceOptions {
@@ -30,17 +30,20 @@ export interface AutoTraceResult {
 
 /** Map both detectors' vocabularies onto the parser's labels, with per-label thresholds. */
 const OPENINGS_MAP: Record<string, [string, number]> = {
-  window: ['window', 0.2],
-  door: ['door', 0.2],
+  window: ['window', 0.12],
+  door: ['door', 0.12],
   lamp: ['light', 0.25],
   porch: ['porch', 0.3],
   stairs: ['stairs', 0.3],
 };
+// Low bars here: the parser checks weak hits against the class map and the house's shape.
 const EXTRAS_MAP: Record<string, [string, number]> = {
-  'garage door': ['garage', 0.2],
+  'garage door': ['garage', 0.08],
   lamp: ['light', 0.3],
-  'front door': ['door', 0.3],
-  chimney: ['chimney', 0.3],
+  'front door': ['door', 0.15],
+  'house door': ['door', 0.15],
+  door: ['door', 0.15],
+  chimney: ['chimney', 0.12],
   column: ['column', 0.35],
 };
 
@@ -50,7 +53,7 @@ function toInt(v: number | bigint) {
 
 /** Crop the class map to the letterboxed photo area. */
 function segGrid(out: ModelOutput, box: ReturnType<typeof letterbox>['box']): SegGrid {
-  const size = box.size;
+  const size = box.w;
   const w = Math.round(box.region.w * box.scale);
   const h = Math.round(box.region.h * box.scale);
   const cls = new Uint8Array(w * h);
@@ -102,6 +105,15 @@ function houseCrop(seg: SegGrid, photo: Raster): { x: number; y: number; w: numb
   return { x: X0, y: Y0, w: X1 - X0, h: Y1 - Y0 };
 }
 
+/** Run a detector on the house crop and map its labels. */
+async function detect(runner: ModelRunner, name: 'openings' | 'extras', photo: Raster, crop: { x: number; y: number; w: number; h: number }, map: Record<string, [string, number]>): Promise<Detection[]> {
+  const spec = MODELS[name];
+  // The detectors take any input shape: a wide house gets a wide input rather than a padded square.
+  const inp = letterbox(photo, inputSize(spec.size, crop), crop);
+  const out = await runner.run(name, inp.tensor, inp.box.w, inp.box.h);
+  return mapLabels(decodeYolo(out.data as Float32Array, out.dims, spec.labels, inp.box, { conf: 0.06 }), map);
+}
+
 function mapLabels(dets: Detection[], map: Record<string, [string, number]>): Detection[] {
   const out: Detection[] = [];
   for (const d of dets) {
@@ -117,18 +129,14 @@ export async function autoTrace(photo: Raster, runner: ModelRunner, opts: AutoTr
 
   progress('Finding the house…', 0.05);
   const segIn = letterbox(photo, MODELS.seg.size);
-  const seg = segGrid(await runner.run('seg', segIn.tensor), segIn.box);
+  const seg = segGrid(await runner.run('seg', segIn.tensor, segIn.box.w, segIn.box.h), segIn.box);
 
   const crop = houseCrop(seg, photo);
-  progress('Finding windows and doors…', 0.35);
-  const opIn = letterbox(photo, MODELS.openings.size, crop);
-  const op = await runner.run('openings', opIn.tensor);
-  const openings = mapLabels(decodeYolo(op.data as Float32Array, op.dims, MODELS.openings.labels, opIn.box, { conf: 0.15 }), OPENINGS_MAP);
+  progress('Finding windows and doors…', 0.3);
+  const openings = await detect(runner, 'openings', photo, crop, OPENINGS_MAP);
 
-  progress('Finding garage doors and lights…', 0.65);
-  const exIn = letterbox(photo, MODELS.extras.size, crop);
-  const ex = await runner.run('extras', exIn.tensor);
-  const extras = mapLabels(decodeYolo(ex.data as Float32Array, ex.dims, MODELS.extras.labels, exIn.box, { conf: 0.15 }), EXTRAS_MAP);
+  progress('Finding garage doors and lights…', 0.6);
+  const extras = await detect(runner, 'extras', photo, crop, EXTRAS_MAP);
 
   progress('Tracing walls and roofs…', 0.9);
   const detections = [...openings, ...extras];

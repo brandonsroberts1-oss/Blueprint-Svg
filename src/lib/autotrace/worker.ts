@@ -3,7 +3,7 @@
 // (kept in Cache Storage for later visits), then segments and detects.
 import * as ort from 'onnxruntime-web/wasm';
 import type { Rect } from './house';
-import { MODELS, type ModelName } from './models';
+import { MODELS, MODEL_VERSION, type ModelName } from './models';
 import { autoTrace, type ModelRunner } from './pipeline';
 
 export interface RunRequest {
@@ -23,10 +23,20 @@ export type WorkerReply =
   | { type: 'error'; id: number; message: string };
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
-const CACHE = 'blueprint-engraver-models-v1';
+const CACHE = `blueprint-engraver-models-v${MODEL_VERSION}`;
 ort.env.wasm.numThreads = ctx.crossOriginIsolated ? Math.min(4, navigator.hardwareConcurrency || 1) : 1;
 
 const sessions = new Map<ModelName, Promise<ort.InferenceSession>>();
+
+// Drop models cached by earlier versions of the app.
+try {
+  caches
+    .keys()
+    .then((keys) => Promise.all(keys.filter((k) => k.startsWith('blueprint-engraver-models-') && k !== CACHE).map((k) => caches.delete(k))))
+    .catch(() => undefined);
+} catch {
+  /* Cache Storage unavailable. */
+}
 
 async function download(url: string, onBytes: (n: number) => void): Promise<Uint8Array> {
   try {
@@ -69,7 +79,7 @@ async function download(url: string, onBytes: (n: number) => void): Promise<Uint
 function session(name: ModelName, base: string, onBytes: (n: number) => void): Promise<ort.InferenceSession> {
   let s = sessions.get(name);
   if (!s) {
-    s = download(new URL(MODELS[name].file, base).href, onBytes).then((bytes) => ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }));
+    s = download(new URL(`${MODELS[name].file}?v=${MODEL_VERSION}`, base).href, onBytes).then((bytes) => ort.InferenceSession.create(bytes, { executionProviders: ['wasm'], graphOptimizationLevel: 'all' }));
     s.catch(() => sessions.delete(name));
     sessions.set(name, s);
   }
@@ -96,10 +106,9 @@ ctx.onmessage = async (e: MessageEvent<RunRequest>) => {
       });
     }
     const runner: ModelRunner = {
-      async run(name, input) {
+      async run(name, input, w, h) {
         const s = await session(name, req.modelBase, () => undefined);
-        const size = MODELS[name].size;
-        const out = await s.run({ [s.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, size, size]) });
+        const out = await s.run({ [s.inputNames[0]]: new ort.Tensor('float32', input, [1, 3, h, w]) });
         const t = out[s.outputNames[0]];
         return { data: t.data as Float32Array | Uint8Array, dims: t.dims };
       },

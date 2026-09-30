@@ -139,14 +139,20 @@ open models run in a web worker with [ONNX Runtime Web](https://onnxruntime.ai/)
 |---|---|
 | YOLO26s semantic segmentation (ADE20K) | the house outline against sky, trees and ground |
 | YOLOv8s trained on Open Images | windows and doors |
-| YOLOE-26s with fixed text prompts | garage doors, exterior lights, chimneys |
+| YOLOE-26s with fixed text prompts | garage doors, entry doors, exterior lights, chimneys |
+
+The detectors take the house crop at its own aspect ratio (a wide ranch gets a wide input, not
+a padded square), and weak hits are kept only where the class map agrees they sit on the house;
+their shape then settles look-alikes (a tall "window" standing on the ground is a door).
 
 A parser then turns those into the drawing: it finds the grade line and roofline, traces the
-eave as the strongest continuous change from roof to wall (dynamic programming over colour and
-texture, kept above every window and door), and builds wall rectangles per wing, roof and gable
-polygons, porch roofs and the openings. The first run downloads about 34 MB of models (cached
-for next time); after that a trace takes a few seconds. Results are a first draft — check the
-shapes against the photo, especially where trees hide the house.
+eave by dynamic programming as the long, level break between roof and wall — from edges, a check
+against the roof's own colour just under the roofline, and (only when it clearly separates them)
+roof/wall colour and texture models — kept above every window and door. It then snaps the result
+to clean shapes: the fewest wall levels that explain the eave, a straightened roofline with
+chimneys lifted out, gables, porch roofs and the openings. The first run downloads about 36 MB
+of models (cached for next time); after that a trace takes a few seconds. Results are a first
+draft — check the shapes against the photo, especially where trees or cars hide the house.
 
 The models live in `public/models/`; `scripts/export-models.py` rebuilds them from the
 Ultralytics releases.

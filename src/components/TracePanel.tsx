@@ -67,7 +67,7 @@ function AiSection() {
         </div>
       ) : (
         <p className="muted small">
-          Free and private: it runs on this device, no account or key needed. The first run downloads about 34 MB of models; after that it takes a few
+          Free and private: it runs on this device, no account or key needed. The first run downloads about 36 MB of models; after that it takes a few
           seconds. Then fine-tune anything with the tools below.
         </p>
       )}

@@ -29,7 +29,7 @@ def keep_rows(path: str, rows: list[int], name: str = 'boxes') -> onnx.ModelProt
     m.graph.node.append(helper.make_node('Gather', [out.name, 'keep_rows'], [name], axis=1, name='keep_rows'))
     while len(m.graph.output):
         m.graph.output.remove(m.graph.output[0])
-    m.graph.output.append(helper.make_tensor_value_info(name, TensorProto.FLOAT, [1, len(rows), anchors]))
+    m.graph.output.append(helper.make_tensor_value_info(name, TensorProto.FLOAT, [1, len(rows), anchors or 'anchors']))
     return m
 
 
@@ -89,15 +89,16 @@ def _swap(m, new_inits, new_nodes, removed):
 p = YOLO('yolo26s-sem-ade20k.pt').export(format='onnx', imgsz=640, opset=17, simplify=True)
 onnx.save(fp16_weights(onnx.load(p)), os.path.join(OUT, 'house-seg.onnx'))
 
+# The detectors are exported with dynamic input shapes: the app feeds a wide house a wide input.
 # 2. Open Images detector -> [1, 4 + 8, anchors]: window, door, house, building, porch, stairs, lamp, tree.
-p = YOLO('yolov8s-oiv7.pt').export(format='onnx', imgsz=800, opset=17, simplify=True)
+p = YOLO('yolov8s-oiv7.pt').export(format='onnx', imgsz=800, opset=17, simplify=True, dynamic=True)
 onnx.save(int8_weights(keep_rows(p, [0, 1, 2, 3] + [4 + c for c in (587, 164, 257, 70, 401, 489, 301, 553)])), os.path.join(OUT, 'house-openings.onnx'))
 
-# 3. YOLOE open-vocabulary detector with fixed prompts -> [1, 4 + 9, anchors].
-names = ['garage door', 'lamp', 'front door', 'chimney', 'column', 'house', 'tree', 'bush', 'car']
+# 3. YOLOE open-vocabulary detector with fixed prompts -> [1, 4 + 11, anchors].
+names = ['garage door', 'lamp', 'front door', 'chimney', 'column', 'house', 'tree', 'bush', 'car', 'house door', 'door']
 ye = YOLOE('yoloe-26s-seg.pt')
 ye.set_classes(names, ye.get_text_pe(names))
-p = ye.export(format='onnx', imgsz=640, opset=17, simplify=True)
+p = ye.export(format='onnx', imgsz=640, opset=17, simplify=True, dynamic=True)
 onnx.save(int8_weights(keep_rows(p, list(range(4 + len(names))))), os.path.join(OUT, 'house-extras.onnx'))
 
 for f in sorted(os.listdir(OUT)):

@@ -3,7 +3,7 @@ import { type Detection, decodeYolo, nms } from '../src/lib/autotrace/decode';
 import { parseHouse } from '../src/lib/autotrace/house';
 import { closeMask, columnProfile, components, douglasPeucker, fillHoles, maskWhere, morph } from '../src/lib/autotrace/mask';
 import { ADE } from '../src/lib/autotrace/models';
-import { letterbox } from '../src/lib/autotrace/raster';
+import { inputSize, letterbox } from '../src/lib/autotrace/raster';
 import { elementsFromAnalysis } from '../src/lib/model/fromAnalysis';
 
 describe('model output decoding', () => {
@@ -33,6 +33,21 @@ describe('model output decoding', () => {
     expect(win.x0).toBeCloseTo((45 - 0) / 0.25);
     expect(win.y0).toBeCloseTo((40 - 25) / 0.25);
     expect(win.score).toBeCloseTo(0.9);
+  });
+
+  it('gives a wide house a wide model input of about the same area', () => {
+    const wide = inputSize(800, { w: 1200, h: 300 });
+    expect(wide.w % 32).toBe(0);
+    expect(wide.h % 32).toBe(0);
+    expect(wide.w / wide.h).toBeGreaterThan(3);
+    expect(Math.abs(wide.w * wide.h - 800 * 800) / (800 * 800)).toBeLessThan(0.15);
+    // A small crop is not blown up more than twice.
+    const small = inputSize(800, { w: 200, h: 100 });
+    expect(small.w).toBeLessThanOrEqual(2 * 200 + 32);
+    const { box } = letterbox({ width: 1200, height: 300, data: new Uint8ClampedArray(1200 * 300 * 4) }, wide);
+    expect(box.w).toBe(wide.w);
+    expect(box.h).toBe(wide.h);
+    expect(box.padX + box.padY).toBeLessThan(32);
   });
 
   it('keeps separate labels apart unless asked to be agnostic', () => {
@@ -75,7 +90,7 @@ describe('mask tools', () => {
  * A synthetic "photo" 320×200: sky, a dark hip roof over a light wall, a window,
  * a garage door and ground — plus the matching class map.
  */
-function syntheticHouse() {
+function syntheticHouse(opts: { roof?: number[]; wall?: number[]; gutter?: boolean } = {}) {
   const W = 320;
   const H = 200;
   const data = new Uint8ClampedArray(W * H * 4);
@@ -90,10 +105,10 @@ function syntheticHouse() {
         rgb = [110, 140, 70];
         c = ADE.grass;
       } else if (x >= 70 && x <= 250 && y >= 100) {
-        rgb = [225, 220, 205];
+        rgb = opts.gutter && y < 103 ? [25, 25, 28] : (opts.wall ?? [225, 220, 205]);
         c = ADE.house;
       } else if (y >= roofTop(x) && y < 100) {
-        rgb = [70, 70, 75];
+        rgb = opts.roof ?? [70, 70, 75];
         c = ADE.house;
       }
       data.set([rgb[0], rgb[1], rgb[2], 255], i * 4);
@@ -137,6 +152,26 @@ describe('house parsing', () => {
     // And the result converts into editable project elements.
     const t = elementsFromAnalysis(analysis, 1, 1, photo.width, photo.height);
     expect(t.elements.length).toBe(analysis.elements.length);
+  });
+
+  it('finds the eave from the gutter line when roof and wall are nearly the same colour', () => {
+    // A dark roof over dark brick in shade: colour can't separate them, the gutter's shadow line can.
+    const { photo, seg, detections } = syntheticHouse({ roof: [70, 70, 75], wall: [78, 72, 74], gutter: true });
+    const { analysis } = parseHouse({ photo, seg, detections });
+    const roof = analysis.elements.find((e) => e.kind === 'roof');
+    expect(roof).toBeTruthy();
+    const ys = roof!.polygon!.map((p) => p.y);
+    expect(Math.max(...ys)).toBeGreaterThan(94);
+    expect(Math.max(...ys)).toBeLessThan(106);
+  });
+
+  it('calls a door-shaped "window" standing on the ground a door', () => {
+    const { photo, seg, detections } = syntheticHouse();
+    const withDoor = [...detections, { x0: 130, y0: 125, x1: 150, y1: 169, score: 0.3, label: 'window' }];
+    const { analysis } = parseHouse({ photo, seg, detections: withDoor });
+    const door = analysis.elements.find((e) => e.kind === 'door');
+    expect(door).toBeTruthy();
+    expect(door!.box!.x0).toBeCloseTo(130);
   });
 
   it('reports no house when the class map has none', () => {
